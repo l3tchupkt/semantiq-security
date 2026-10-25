@@ -1,8 +1,9 @@
-"""Python AST-based deterministic vulnerability analyzer."""
+"""Python AST-based deterministic vulnerability analyzer with intra-procedural taint tracking."""
 
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
 
 from semantiq.models import (
     CodeEvidence,
@@ -15,36 +16,68 @@ from semantiq.models import (
     VulnerabilityCategory,
 )
 
+# Known untrusted input sources
+UNTRUSTED_SOURCES = {
+    "request.args",
+    "request.args.get",
+    "request.form",
+    "request.form.get",
+    "request.values",
+    "request.values.get",
+    "request.json",
+    "request.get_json",
+    "request.data",
+    "request.headers",
+    "request.cookies",
+    "request.params",
+    "sys.argv",
+    "os.environ",
+    "os.environ.get",
+    "input",
+    "getpass.getpass",
+}
 
-def _get_call_name(node: ast.Call) -> str:
+# Known sanitizers that neutralize taint
+KNOWN_SANITIZERS = {
+    "int",
+    "float",
+    "bool",
+    "shlex.quote",
+    "html.escape",
+    "re.escape",
+    "werkzeug.utils.secure_filename",
+}
+
+
+def _get_call_name(node: ast.AST) -> str:
     """Extract normalized call name (e.g., 'os.system', 'subprocess.Popen')."""
-    if isinstance(node.func, ast.Name):
-        return node.func.id
-    if isinstance(node.func, ast.Attribute):
-        value_name = ""
-        if isinstance(node.func.value, ast.Name):
-            value_name = node.func.value.id
-        elif isinstance(node.func.value, ast.Attribute):
-            value_name = f"{_get_call_name(ast.Call(func=node.func.value, args=[], keywords=[]))}"
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        value_name = _get_call_name(node.value)
         if value_name:
-            return f"{value_name}.{node.func.attr}"
-        return node.func.attr
+            return f"{value_name}.{node.attr}"
+        return node.attr
+    if isinstance(node, ast.Call):
+        return _get_call_name(node.func)
     return ""
 
 
-def _is_dynamic_string(node: ast.AST) -> bool:
-    """Check if AST node represents dynamic string construction (f-string, format, % or +)."""
-    if isinstance(node, ast.JoinedStr):
-        return True
-    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mod, ast.Add)):
-        return True
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
-        return True
-    return isinstance(node, ast.Name)
+@dataclass
+class VarBinding:
+    """Represents a tracked variable assignment state."""
+
+    name: str
+    is_tainted: bool
+    is_constant_str: bool = False
+    constant_val: str | None = None
+    source_desc: str = ""
+    line: int = 1
+    snippet: str = ""
 
 
 class PythonASTVisitor(ast.NodeVisitor):
-    """AST visitor detecting common vulnerability patterns in Python source."""
+    """AST visitor detecting vulnerability patterns with intra-procedural taint propagation."""
 
     def __init__(self, file_path: str, source_code: str) -> None:
         self.file_path = file_path.replace("\\", "/")
@@ -52,6 +85,12 @@ class PythonASTVisitor(ast.NodeVisitor):
         self.lines = source_code.splitlines()
         self.findings: list[Finding] = []
         self._current_function: str | None = None
+        # Scopes: list of dicts mapping var_name -> VarBinding
+        self._scopes: list[dict[str, VarBinding]] = [{}]
+
+    @property
+    def current_scope(self) -> dict[str, VarBinding]:
+        return self._scopes[-1]
 
     def _get_source_line(self, line_num: int) -> str:
         if 1 <= line_num <= len(self.lines):
@@ -63,17 +102,200 @@ class PythonASTVisitor(ast.NodeVisitor):
         end = min(len(self.lines), end_line)
         return "\n".join(self.lines[start - 1 : end])
 
+    def _lookup_var(self, name: str) -> VarBinding | None:
+        """Lookup variable binding from innermost to outermost scope."""
+        for scope in reversed(self._scopes):
+            if name in scope:
+                return scope[name]
+        return None
+
+    def _is_tainted_expr(self, node: ast.AST) -> tuple[bool, list[VarBinding]]:
+        """Evaluate if an AST expression carries taint from untrusted sources or dynamic formatting."""
+        taint_sources: list[VarBinding] = []
+
+        if isinstance(node, ast.Constant):
+            return False, []
+
+        if isinstance(node, ast.Call):
+            call_name = _get_call_name(node)
+            # Check if sanitized
+            if call_name in KNOWN_SANITIZERS:
+                return False, []
+            # Check if source of untrusted input
+            if call_name in UNTRUSTED_SOURCES or any(call_name.startswith(src) for src in UNTRUSTED_SOURCES):
+                lineno = getattr(node, "lineno", 1)
+                binding = VarBinding(
+                    name=call_name,
+                    is_tainted=True,
+                    source_desc=f"Untrusted source '{call_name}'",
+                    line=lineno,
+                    snippet=self._get_source_line(lineno).strip(),
+                )
+                return True, [binding]
+
+        if isinstance(node, ast.Attribute):
+            attr_name = _get_call_name(node)
+            if attr_name in UNTRUSTED_SOURCES or any(attr_name.startswith(src) for src in UNTRUSTED_SOURCES):
+                lineno = getattr(node, "lineno", 1)
+                binding = VarBinding(
+                    name=attr_name,
+                    is_tainted=True,
+                    source_desc=f"Untrusted input attribute '{attr_name}'",
+                    line=lineno,
+                    snippet=self._get_source_line(lineno).strip(),
+                )
+                return True, [binding]
+
+        if isinstance(node, ast.Name):
+            looked_up = self._lookup_var(node.id)
+            if looked_up:
+                if looked_up.is_constant_str:
+                    return False, []
+                if looked_up.is_tainted:
+                    return True, [looked_up]
+            # Untracked variable name - assume potentially dynamic unless known constant
+            return True, [
+                VarBinding(
+                    name=node.id,
+                    is_tainted=True,
+                    source_desc=f"Variable '{node.id}'",
+                    line=getattr(node, "lineno", 1),
+                    snippet=self._get_source_line(getattr(node, "lineno", 1)).strip(),
+                )
+            ]
+
+        if isinstance(node, ast.JoinedStr):
+            # f-string: check all formatted values
+            is_tainted = False
+            for val in node.values:
+                if isinstance(val, ast.FormattedValue):
+                    t, sources = self._is_tainted_expr(val.value)
+                    if t:
+                        is_tainted = True
+                        taint_sources.extend(sources)
+            return is_tainted, taint_sources
+
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+            t_left, src_left = self._is_tainted_expr(node.left)
+            t_right, src_right = self._is_tainted_expr(node.right)
+            if t_left or t_right:
+                taint_sources.extend(src_left)
+                taint_sources.extend(src_right)
+                return True, taint_sources
+            return False, []
+
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
+            t_base, src_base = self._is_tainted_expr(node.func.value)
+            taint_sources.extend(src_base)
+            for arg in node.args:
+                t_arg, src_arg = self._is_tainted_expr(arg)
+                if t_arg:
+                    taint_sources.extend(src_arg)
+            for kw in node.keywords:
+                t_kw, src_kw = self._is_tainted_expr(kw.value)
+                if t_kw:
+                    taint_sources.extend(src_kw)
+            return len(taint_sources) > 0 or t_base, taint_sources
+
+        return False, []
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        prev = self._current_function
-        self._current_function = node.name
+        self._enter_function(node)
         self.generic_visit(node)
-        self._current_function = prev
+        self._exit_function()
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        prev = self._current_function
-        self._current_function = node.name
+        self._enter_function(node)
         self.generic_visit(node)
-        self._current_function = prev
+        self._exit_function()
+
+    def _enter_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        self._current_function = node.name
+        new_scope: dict[str, VarBinding] = {}
+
+        # If function has web route decorators, treat parameters as untrusted inputs
+        is_route_handler = any(
+            _get_call_name(dec).endswith((".route", ".get", ".post", ".put", ".delete"))
+            for dec in node.decorator_list
+        )
+        for arg in node.args.args:
+            if arg.arg not in {"self", "cls"} and is_route_handler:
+                new_scope[arg.arg] = VarBinding(
+                    name=arg.arg,
+                    is_tainted=True,
+                    source_desc=f"Route parameter '{arg.arg}'",
+                    line=getattr(arg, "lineno", node.lineno),
+                    snippet=self._get_source_line(getattr(arg, "lineno", node.lineno)).strip(),
+                )
+
+        self._scopes.append(new_scope)
+
+    def _exit_function(self) -> None:
+        if len(self._scopes) > 1:
+            self._scopes.pop()
+        self._current_function = None
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        """Track variable assignments and propagate taint or constant state."""
+        start_line = getattr(node, "lineno", 1)
+        snippet = self._get_source_line(start_line).strip()
+
+        # Check if value is a constant string
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.current_scope[target.id] = VarBinding(
+                        name=target.id,
+                        is_tainted=False,
+                        is_constant_str=True,
+                        constant_val=node.value.value,
+                        line=start_line,
+                        snippet=snippet,
+                    )
+            self.generic_visit(node)
+            return
+
+        is_tainted, sources = self._is_tainted_expr(node.value)
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                desc = sources[0].source_desc if sources else f"Assigned expression at line {start_line}"
+                self.current_scope[target.id] = VarBinding(
+                    name=target.id,
+                    is_tainted=is_tainted,
+                    is_constant_str=False,
+                    source_desc=desc,
+                    line=start_line,
+                    snippet=snippet,
+                )
+
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        """Handle annotated assignments (e.g. query: str = ...)."""
+        if node.value and isinstance(node.target, ast.Name):
+            start_line = getattr(node, "lineno", 1)
+            snippet = self._get_source_line(start_line).strip()
+            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                self.current_scope[node.target.id] = VarBinding(
+                    name=node.target.id,
+                    is_tainted=False,
+                    is_constant_str=True,
+                    constant_val=node.value.value,
+                    line=start_line,
+                    snippet=snippet,
+                )
+            else:
+                is_tainted, sources = self._is_tainted_expr(node.value)
+                desc = sources[0].source_desc if sources else f"Assigned expression at line {start_line}"
+                self.current_scope[node.target.id] = VarBinding(
+                    name=node.target.id,
+                    is_tainted=is_tainted,
+                    is_constant_str=False,
+                    source_desc=desc,
+                    line=start_line,
+                    snippet=snippet,
+                )
+        self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _get_call_name(node)
@@ -97,71 +319,83 @@ class PythonASTVisitor(ast.NodeVisitor):
                     has_shell = True
                     break
 
-            if has_shell and node.args and _is_dynamic_string(node.args[0]):
-                self._record_finding(
-                    rule_id="SQ-PY-001",
-                    title="Command Injection via subprocess with shell=True",
-                    summary=f"Dynamic command string passed to {call_name} with shell=True enables arbitrary command execution.",
-                    category=VulnerabilityCategory.COMMAND_INJECTION,
-                    severity=SeverityLevel.CRITICAL,
-                    confidence=ConfidenceLevel.HIGH,
-                    cwe_ids=["CWE-78"],
-                    start_line=start_line,
-                    end_line=end_line,
-                    explanation=f"{call_name} executed with dynamic input and shell=True",
-                    remediation="Pass command arguments as an array (argv list) and omit shell=True, or sanitize input using shlex.quote().",
-                )
+            if has_shell and node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-001",
+                        title="Command Injection via subprocess with shell=True",
+                        summary=f"Dynamic command string passed to {call_name} with shell=True enables arbitrary command execution.",
+                        category=VulnerabilityCategory.COMMAND_INJECTION,
+                        severity=SeverityLevel.CRITICAL,
+                        confidence=ConfidenceLevel.HIGH,
+                        cwe_ids=["CWE-78"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation=f"{call_name} executed with dynamic input and shell=True",
+                        remediation="Pass command arguments as an array (argv list) and omit shell=True, or sanitize input using shlex.quote().",
+                        taint_sources=sources,
+                    )
 
         # 2. Command Injection: os.system / os.popen
         elif call_name in {"os.system", "os.popen"}:
-            if node.args and _is_dynamic_string(node.args[0]):
-                self._record_finding(
-                    rule_id="SQ-PY-001",
-                    title=f"Command Injection via {call_name}",
-                    summary=f"Unsanitized command string passed to {call_name}.",
-                    category=VulnerabilityCategory.COMMAND_INJECTION,
-                    severity=SeverityLevel.CRITICAL,
-                    confidence=ConfidenceLevel.HIGH,
-                    cwe_ids=["CWE-78"],
-                    start_line=start_line,
-                    end_line=end_line,
-                    explanation=f"{call_name} executed with formatted command string",
-                    remediation="Use subprocess.run() with an argument array instead of os.system().",
-                )
+            if node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-001",
+                        title=f"Command Injection via {call_name}",
+                        summary=f"Unsanitized command string passed to {call_name}.",
+                        category=VulnerabilityCategory.COMMAND_INJECTION,
+                        severity=SeverityLevel.CRITICAL,
+                        confidence=ConfidenceLevel.HIGH,
+                        cwe_ids=["CWE-78"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation=f"{call_name} executed with formatted command string",
+                        remediation="Use subprocess.run() with an argument array instead of os.system().",
+                        taint_sources=sources,
+                    )
 
         # 3. SQL Injection: cursor.execute / execute / executemany with formatted string
         elif call_name.endswith(".execute") or call_name.endswith(".executemany"):
-            if node.args and _is_dynamic_string(node.args[0]):
-                self._record_finding(
-                    rule_id="SQ-PY-002",
-                    title="SQL Injection via string formatting in SQL query",
-                    summary=f"Dynamic string formatting detected in {call_name} call instead of parameterized queries.",
-                    category=VulnerabilityCategory.SQL_INJECTION,
-                    severity=SeverityLevel.HIGH,
-                    confidence=ConfidenceLevel.HIGH,
-                    cwe_ids=["CWE-89"],
-                    start_line=start_line,
-                    end_line=end_line,
-                    explanation="Raw SQL query dynamically constructed using string interpolation",
-                    remediation="Use parameterized queries with placeholder parameters (?, %s, :param) rather than string interpolation.",
-                )
+            if node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-002",
+                        title="SQL Injection via string formatting in SQL query",
+                        summary=f"Dynamic string formatting detected in {call_name} call instead of parameterized queries.",
+                        category=VulnerabilityCategory.SQL_INJECTION,
+                        severity=SeverityLevel.HIGH,
+                        confidence=ConfidenceLevel.HIGH,
+                        cwe_ids=["CWE-89"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation="Raw SQL query dynamically constructed using string interpolation",
+                        remediation="Use parameterized queries with placeholder parameters (?, %s, :param) rather than string interpolation.",
+                        taint_sources=sources,
+                    )
 
-        # 4. Path Traversal: open() / send_file() with concatenated path
+        # 4. Path Traversal: open() / send_file() with dynamic path
         elif call_name in {"open", "send_file", "flask.send_file"} or call_name.endswith(".open"):
-            if node.args and _is_dynamic_string(node.args[0]):
-                self._record_finding(
-                    rule_id="SQ-PY-003",
-                    title="Potential Path Traversal via dynamic file path",
-                    summary=f"Dynamic path passed to {call_name} without explicit boundary validation.",
-                    category=VulnerabilityCategory.PATH_TRAVERSAL,
-                    severity=SeverityLevel.HIGH,
-                    confidence=ConfidenceLevel.MEDIUM,
-                    cwe_ids=["CWE-22"],
-                    start_line=start_line,
-                    end_line=end_line,
-                    explanation="File operation utilizes dynamic string for filename/path",
-                    remediation="Resolve and validate path against an allowed base directory using Path.resolve() and relative_to().",
-                )
+            if node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-003",
+                        title="Potential Path Traversal via dynamic file path",
+                        summary=f"Dynamic path passed to {call_name} without explicit boundary validation.",
+                        category=VulnerabilityCategory.PATH_TRAVERSAL,
+                        severity=SeverityLevel.HIGH,
+                        confidence=ConfidenceLevel.MEDIUM,
+                        cwe_ids=["CWE-22"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation="File operation utilizes dynamic string for filename/path",
+                        remediation="Resolve and validate path against an allowed base directory using Path.resolve() and relative_to().",
+                        taint_sources=sources,
+                    )
 
         # 5. SSRF: requests / httpx with dynamic URL
         elif call_name in {
@@ -169,20 +403,23 @@ class PythonASTVisitor(ast.NodeVisitor):
             "httpx.get", "httpx.post", "httpx.put", "httpx.delete", "httpx.request",
             "urllib.request.urlopen",
         }:
-            if node.args and _is_dynamic_string(node.args[0]):
-                self._record_finding(
-                    rule_id="SQ-PY-004",
-                    title=f"Potential SSRF via dynamic HTTP request in {call_name}",
-                    summary="Outbound HTTP request to dynamic URL without explicit destination validation.",
-                    category=VulnerabilityCategory.SSRF,
-                    severity=SeverityLevel.MEDIUM,
-                    confidence=ConfidenceLevel.MEDIUM,
-                    cwe_ids=["CWE-918"],
-                    start_line=start_line,
-                    end_line=end_line,
-                    explanation=f"{call_name} invoked with variable destination URL",
-                    remediation="Validate destination URLs against an allowlist of trusted domains and restrict access to private IP ranges.",
-                )
+            if node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-004",
+                        title=f"Potential SSRF via dynamic HTTP request in {call_name}",
+                        summary="Outbound HTTP request to dynamic URL without explicit destination validation.",
+                        category=VulnerabilityCategory.SSRF,
+                        severity=SeverityLevel.MEDIUM,
+                        confidence=ConfidenceLevel.MEDIUM,
+                        cwe_ids=["CWE-918"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation=f"{call_name} invoked with variable destination URL",
+                        remediation="Validate destination URLs against an allowlist of trusted domains and restrict access to private IP ranges.",
+                        taint_sources=sources,
+                    )
 
         # 6. Unsafe Deserialization: pickle.loads, marshal.loads, yaml.load
         elif call_name in {"pickle.loads", "pickle.load", "_pickle.loads", "marshal.loads"}:
@@ -277,6 +514,46 @@ class PythonASTVisitor(ast.NodeVisitor):
                 remediation="Use tempfile.NamedTemporaryFile() or tempfile.mkstemp() instead.",
             )
 
+        # 10. Code Injection via eval() or exec()
+        elif call_name in {"eval", "exec"}:
+            if node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-009",
+                        title=f"Code Injection via dynamic {call_name}()",
+                        summary=f"Arbitrary code execution risk from evaluating untrusted input with {call_name}().",
+                        category=VulnerabilityCategory.CODE_INJECTION,
+                        severity=SeverityLevel.CRITICAL,
+                        confidence=ConfidenceLevel.HIGH,
+                        cwe_ids=["CWE-95"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation=f"{call_name}() called with dynamic expression",
+                        remediation=f"Avoid dynamic {call_name}(); parse structured inputs with ast.literal_eval() or json.loads().",
+                        taint_sources=sources,
+                    )
+
+        # 11. Server-Side Template Injection (SSTI)
+        elif call_name in {"render_template_string", "jinja2.Template"}:
+            if node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-010",
+                        title=f"Server-Side Template Injection (SSTI) via {call_name}",
+                        summary=f"Dynamic string template passed to {call_name} permits arbitrary template expression execution.",
+                        category=VulnerabilityCategory.CODE_INJECTION,
+                        severity=SeverityLevel.CRITICAL,
+                        confidence=ConfidenceLevel.HIGH,
+                        cwe_ids=["CWE-1336"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation=f"{call_name} executed with dynamic unescaped template string",
+                        remediation="Use static template files (render_template) and pass dynamic parameters via context variables.",
+                        taint_sources=sources,
+                    )
+
         self.generic_visit(node)
 
     def _record_finding(
@@ -292,6 +569,7 @@ class PythonASTVisitor(ast.NodeVisitor):
         end_line: int,
         explanation: str,
         remediation: str,
+        taint_sources: list[VarBinding] | None = None,
     ) -> None:
         occurrence_id = f"occ_{rule_id.lower()}_{start_line}"
         finding_id = f"sqf_{rule_id.lower()}_{start_line}"
@@ -313,12 +591,29 @@ class PythonASTVisitor(ast.NodeVisitor):
             role="sink",
         )
 
-        data_flow = [
+        # Build data flow trace with sources if present
+        data_flow: list[DataFlowStep] = []
+        if taint_sources:
+            for src in taint_sources:
+                data_flow.append(
+                    DataFlowStep(
+                        location=SourceLocation(
+                            file_path=self.file_path,
+                            start_line=src.line,
+                            end_line=src.line,
+                            symbol=self._current_function,
+                            role="source",
+                        ),
+                        description=f"Source: {src.source_desc}",
+                    )
+                )
+
+        data_flow.append(
             DataFlowStep(
                 location=location,
-                description=f"Dangerous sink reached in {self._current_function or 'module scope'}",
+                description=f"Sink: {explanation} in {self._current_function or 'module scope'}",
             )
-        ]
+        )
 
         finding = Finding(
             finding_id=finding_id,

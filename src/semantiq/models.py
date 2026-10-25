@@ -46,6 +46,7 @@ class VulnerabilityCategory(str, Enum):
     """Standard vulnerability taxonomy categories."""
     SQL_INJECTION = "sql_injection"
     COMMAND_INJECTION = "command_injection"
+    CODE_INJECTION = "code_injection"
     PATH_TRAVERSAL = "path_traversal"
     SSRF = "ssrf"
     UNSAFE_DESERIALIZATION = "unsafe_deserialization"
