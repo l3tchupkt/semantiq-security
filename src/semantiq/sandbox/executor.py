@@ -38,7 +38,15 @@ class ExecutionOutput(NamedTuple):
 
 
 class SafeSandboxExecutor:
-    """Executes commands safely in an isolated environment with resource constraints."""
+    """Executes commands with process-level constraints and boundary checks.
+
+    IMPORTANT SECURITY NOTE:
+    This class provides process-level containment (argument array enforcement,
+    environment variable stripping, non-interactive stdin, timeouts, and output buffer caps).
+    It does NOT provide kernel-level OS sandboxing or container isolation (e.g. cgroups,
+    Docker, or seccomp). Commands run under the host user's privileges. Dynamic execution
+    is disabled by default and requires explicit opt-in.
+    """
 
     def __init__(self, config: ValidationConfig | None = None) -> None:
         self.config = config or ValidationConfig()
@@ -70,7 +78,8 @@ class SafeSandboxExecutor:
         if not self.config.allow_execution:
             raise ExecutionNotPermittedError(
                 "Dynamic process execution is disabled by default. "
-                "Enable explicitly with allow_execution=True in configuration or CLI flag."
+                "Enable explicitly with allow_execution=True in configuration or CLI flag. "
+                "Note: Subprocess execution provides process constraints, not container/kernel isolation."
             )
 
         if not argv or not argv[0]:

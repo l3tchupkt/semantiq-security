@@ -28,7 +28,7 @@ def test_mcp_server_protocol(vulnerable_app_dir: Path) -> None:
         assert "semantiq_inspect_repository" in tool_names
         assert "semantiq_build_threat_model" in tool_names
 
-        # 3. Tool call
+        # 3. Tool call: inspect repository
         call_req = {
             "method": "tools/call",
             "id": 3,
@@ -41,5 +41,32 @@ def test_mcp_server_protocol(vulnerable_app_dir: Path) -> None:
         call_res = await server.handle_request(call_req)
         assert call_res["result"]["content"][0]["type"] == "text"
         assert "in_scope_files" in call_res["result"]["content"][0]["text"]
+
+        # 4. Tool call: build threat model
+        tm_req = {
+            "method": "tools/call",
+            "id": 4,
+            "jsonrpc": "2.0",
+            "params": {
+                "name": "semantiq_build_threat_model",
+                "arguments": {"path": str(vulnerable_app_dir)},
+            },
+        }
+        tm_res = await server.handle_request(tm_req)
+        assert "entry_points" in tm_res["result"]["content"][0]["text"]
+
+        # 5. Error handling for unknown tool
+        err_req = {
+            "method": "tools/call",
+            "id": 5,
+            "jsonrpc": "2.0",
+            "params": {
+                "name": "non_existent_tool",
+                "arguments": {},
+            },
+        }
+        err_res = await server.handle_request(err_req)
+        assert "error" in err_res
+        assert err_res["error"]["code"] == -32601
 
     asyncio.run(_test())

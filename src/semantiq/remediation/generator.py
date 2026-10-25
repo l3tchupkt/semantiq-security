@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import re
 from pathlib import Path
 
 from semantiq.models import Finding, PatchProposal, VulnerabilityCategory
@@ -50,9 +51,22 @@ def propose_patch(finding: Finding, repository_root: Path) -> PatchProposal:
                 invariant = "Replace unsafe os.system() with argument-split subprocess execution"
 
         elif finding.category == VulnerabilityCategory.SQL_INJECTION:
+            patch_idx = target_idx
+            # If the sink line doesn't contain the f-string, look back up to 3 lines for the query assignment
+            if 'f"' not in line and "f'" not in line:
+                for lookback in [target_idx - 1, target_idx - 2, target_idx - 3]:
+                    if 0 <= lookback < len(modified_lines) and (
+                        'f"' in modified_lines[lookback] or "f'" in modified_lines[lookback]
+                    ):
+                        patch_idx = lookback
+                        line = modified_lines[patch_idx]
+                        break
+
             if 'f"' in line or "f'" in line:
-                modified_lines[target_idx] = f"# FIX: Use parameterized query\n{line}"
-                invariant = "Replace dynamic string interpolation with parameterized SQL"
+                clean_sql = re.sub(r"\{[a-zA-Z0-9_]+\}", "?", line)
+                clean_sql = clean_sql.replace('f"', '"').replace("f'", "'")
+                modified_lines[patch_idx] = clean_sql
+                invariant = "Replace dynamic string interpolation with parameterized SQL query"
 
         elif finding.category == VulnerabilityCategory.INSECURE_CRYPTO:
             if "hashlib.md5" in line:
@@ -69,6 +83,12 @@ def propose_patch(finding: Finding, repository_root: Path) -> PatchProposal:
             elif "tempfile.mktemp" in line:
                 modified_lines[target_idx] = line.replace("tempfile.mktemp()", "tempfile.NamedTemporaryFile().name")
                 invariant = "Replace race-condition prone mktemp with NamedTemporaryFile"
+
+        elif finding.category == VulnerabilityCategory.HARDCODED_SECRET:
+            replaced = re.sub(r'["\'][A-Za-z0-9_\-]{16,}["\']', 'os.environ.get("APP_SECRET_KEY", "")', line)
+            if replaced != line:
+                modified_lines[target_idx] = replaced
+                invariant = "Externalize hardcoded credential to environment variable"
 
         diff_lines = list(
             difflib.unified_diff(

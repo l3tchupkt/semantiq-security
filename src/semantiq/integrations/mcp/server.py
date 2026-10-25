@@ -168,6 +168,13 @@ class MCPServer:
             params = request.get("params", {})
             tool_name = params.get("name")
             args = params.get("arguments", {})
+            valid_tool_names = {t["name"] for t in TOOLS_MANIFEST}
+            if tool_name not in valid_tool_names:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {"code": -32601, "message": f"Tool '{tool_name}' not found."}
+                }
             try:
                 result = await self._dispatch_tool(tool_name, args)
                 return {

@@ -6,6 +6,8 @@ import sqlite3
 import subprocess
 import tempfile
 
+from db import execute_safe_query
+
 
 def safe_command(dest: str) -> None:
     # SAFE: Argument array without shell=True
@@ -16,6 +18,19 @@ def safe_sql(cursor: sqlite3.Cursor, user_id: str) -> list:
     # SAFE: Parameterized query placeholder
     cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
     return cursor.fetchall()
+
+
+def safe_alias_query(cursor: sqlite3.Cursor) -> list:
+    # SAFE: Aliased constant string literal
+    static_sql = "SELECT id, username FROM users ORDER BY id ASC"
+    aliased_sql = static_sql
+    cursor.execute(aliased_sql)
+    return cursor.fetchall()
+
+
+def safe_cross_file(cursor: sqlite3.Cursor, user_id: str) -> list:
+    # SAFE: Cross-file helper using parameterized placeholders
+    return execute_safe_query(cursor, "SELECT * FROM items WHERE id = ?", (user_id,))
 
 
 def safe_crypto(password: str) -> str:

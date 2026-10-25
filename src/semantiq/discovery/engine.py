@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from semantiq.analysis.context import ContextCollector
+from semantiq.analysis.interprocedural import build_repository_symbol_table
 from semantiq.analysis.python_ast import analyze_python_source
 from semantiq.analysis.regex_patterns import analyze_javascript_source
 from semantiq.config import ScanConfig
@@ -52,6 +53,10 @@ class VulnerabilityDiscoveryEngine:
         """Execute deterministic multi-stage discovery over in-scope files."""
         raw_candidates: list[Finding] = []
 
+        # Pass 1: Build cross-file symbol table for Python source files
+        python_files = [f for f in files if f.endswith((".py", ".pyi"))]
+        symbol_table = build_repository_symbol_table(self.repository_root, python_files)
+
         for rel_file in files:
             full_path = self.repository_root / rel_file
             if not full_path.exists() or not full_path.is_file():
@@ -71,9 +76,9 @@ class VulnerabilityDiscoveryEngine:
                 )
             )
 
-            # Analyze Python source
+            # Analyze Python source with cross-file symbol table
             if rel_file.endswith((".py", ".pyi")):
-                py_findings = analyze_python_source(rel_file, content)
+                py_findings = analyze_python_source(rel_file, content, symbol_table=symbol_table)
                 raw_candidates.extend(py_findings)
 
             # Analyze JS/TS source

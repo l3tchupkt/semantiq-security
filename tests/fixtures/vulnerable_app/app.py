@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 
 import requests
+from db import execute_raw_query
 
 # VULNERABILITY: Hardcoded AWS Credential
 AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
@@ -63,3 +64,15 @@ def vulnerable_file_permissions(filepath: str) -> None:
 def vulnerable_tempfile() -> str:
     # VULNERABILITY: Insecure tempfile creation
     return tempfile.mktemp()
+
+
+def vulnerable_cross_file_query(cursor: sqlite3.Cursor, category_filter: str) -> list:
+    # VULNERABILITY: Cross-file SQL Injection passing dynamic query into helper
+    query = f"SELECT * FROM inventory WHERE cat = '{category_filter}'"
+    return execute_raw_query(cursor, query)
+
+
+def vulnerable_eval(user_formula: str) -> object:
+    # VULNERABILITY: Code injection via eval
+    return eval(user_formula)
+

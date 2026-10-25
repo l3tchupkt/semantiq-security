@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from pathlib import Path
 
 from semantiq.models import (
     CodeEvidence,
@@ -80,16 +81,33 @@ def redact_secret_string(text: str) -> str:
     return f"{text[:4]}...[REDACTED]...{text[-4:]}"
 
 
-def is_likely_test_placeholder(file_path: str, secret_text: str) -> bool:
+def is_likely_test_placeholder(file_path: str, secret_text: str, rule_id: str = "") -> bool:
     """Check if the context indicates a dummy/test token rather than a live secret."""
     path_lower = file_path.lower()
     text_lower = secret_text.lower()
 
-    if any(ind in path_lower for ind in TEST_INDICATORS):
+    # Never suppress high-severity private encryption keys
+    if rule_id == "SQ-SEC-002":
+        return False
+
+    # Low-entropy or repeated character strings (e.g. 0000000000000000)
+    if bool(re.match(r"^[0-9a-f]{16,}$", text_lower) and len(set(text_lower)) <= 3):
         return True
+
+    # If secret text contains explicit placeholder keywords
     if any(ind in text_lower for ind in TEST_INDICATORS):
-        return True
-    return bool(re.match(r"^[0-9a-f]{16,}$", text_lower) and len(set(text_lower)) <= 3)
+        # Do not suppress structured AWS keys matching AKIA pattern
+        if rule_id == "SQ-SEC-001" and re.match(r"^AKIA[0-9A-Z]{16}$", secret_text):
+            pass
+        else:
+            return True
+
+    # Check if file is explicitly a unit test file
+    is_test_file = any(
+        path_lower.endswith(ext) for ext in ("_test.py", ".test.js", ".spec.js", ".test.ts", ".spec.ts")
+    ) or Path(file_path).name.startswith("test_")
+
+    return bool(is_test_file and rule_id in {"", "SQ-SEC-005"})
 
 
 def analyze_secrets(file_path: str, source_code: str) -> list[Finding]:
@@ -108,8 +126,8 @@ def analyze_secrets(file_path: str, source_code: str) -> list[Finding]:
             if match:
                 raw_token = match.group(1) if match.groups() else match.group(0)
 
-                # Filter obvious placeholders in tests
-                if is_likely_test_placeholder(normalized_path, raw_token):
+                # Filter obvious placeholders in unit tests
+                if is_likely_test_placeholder(normalized_path, raw_token, rule_id=rule_id):
                     continue
 
                 # Calculate entropy for generic secret matches

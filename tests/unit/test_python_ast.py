@@ -111,3 +111,77 @@ def execute_cmd():
     # Passed as array without shell=True, plus shlex.quote -> no command injection finding
     assert len(findings) == 0
 
+
+def test_alias_constant_no_false_positive() -> None:
+    code = """
+x = "SELECT 1"
+y = x
+cursor.execute(y)
+"""
+    findings = analyze_python_source("query.py", code)
+    # Aliased constant string literal must not produce false positive
+    assert len(findings) == 0
+
+
+def test_sanitized_variable_no_false_positive() -> None:
+    code = """
+def get_user():
+    uid = int(request.args.get("id"))
+    cursor.execute(f"SELECT * FROM users WHERE id = {uid}")
+"""
+    findings = analyze_python_source("account.py", code)
+    # Sanitized integer cast must not trigger SQL injection
+    assert len(findings) == 0
+
+
+def test_augassign_taint_propagation() -> None:
+    code = """
+def search():
+    sql = "SELECT * FROM products WHERE "
+    sql += request.args.get("filter")
+    cursor.execute(sql)
+"""
+    findings = analyze_python_source("search.py", code)
+    assert len(findings) == 1
+    assert findings[0].category == VulnerabilityCategory.SQL_INJECTION
+    assert findings[0].rule_id == "SQ-PY-002"
+
+
+def test_conditional_branch_taint() -> None:
+    code = """
+def filter_items(cond):
+    if cond:
+        q = request.args.get("q")
+    else:
+        q = "safe_default"
+    cursor.execute(f"SELECT * FROM items WHERE name = '{q}'")
+"""
+    findings = analyze_python_source("items.py", code)
+    assert len(findings) == 1
+    assert findings[0].category == VulnerabilityCategory.SQL_INJECTION
+
+
+def test_interprocedural_helper_propagation() -> None:
+    from semantiq.analysis.interprocedural import RepositorySymbolTable, index_source_file
+
+    db_code = """
+def run_db_query(cursor, query_string):
+    cursor.execute(query_string)
+"""
+    app_code = """
+from db import run_db_query
+
+def handle_request(cursor):
+    user_filter = request.args.get("f")
+    run_db_query(cursor, f"SELECT * FROM t WHERE c = {user_filter}")
+"""
+    sym_table = RepositorySymbolTable()
+    for s in index_source_file("db.py", db_code):
+        sym_table.add_summary(s)
+
+    findings = analyze_python_source("app.py", app_code, symbol_table=sym_table)
+    assert len(findings) == 1
+    assert findings[0].category == VulnerabilityCategory.SQL_INJECTION
+    assert any(step.location.file_path == "db.py" for step in findings[0].data_flow)
+
+
