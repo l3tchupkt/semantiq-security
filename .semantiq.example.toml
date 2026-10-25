@@ -1,0 +1,40 @@
+# Example Semantiq Security Configuration (.semantiq.toml)
+
+[scan]
+mode = "standard"                  # standard, deep, or diff
+max_file_size_bytes = 2097152      # 2 MB limit per file
+max_files = 50000                  # Maximum files to inventory
+exclude_patterns = [
+    "**/.git/**",
+    "**/node_modules/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/__pycache__/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.pytest_cache/**"
+]
+focus = [
+    "sql-injection",
+    "command-injection",
+    "ssrf",
+    "path-traversal",
+    "unsafe-deserialization",
+    "hardcoded-secrets",
+    "insecure-crypto"
+]
+
+[validation]
+default_mode = "static"            # static, test_based, dynamic_sandbox, manual_plan
+allow_execution = false            # Explicit opt-in required for dynamic sandbox test execution
+timeout_seconds = 30               # Maximum timeout for validation runs
+
+[storage]
+database_path = "~/.semantiq/semantiq.db"
+
+[ai]
+enabled = false                    # Set to true when an AI provider is configured
+provider = "ollama"                # openai, anthropic, ollama, or custom
+model = "deepseek-r1"
+temperature = 0.0
+verify_citations = true            # Verify cited lines exist in local files before accepting findings

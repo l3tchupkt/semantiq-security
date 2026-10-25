@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=65.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semantiq"
+version = "0.1.0"
+description = "Python SDK for security research, AI-assisted vulnerability discovery, and codebase threat modeling."
+readme = "README.md"
+authors = [
+    { name = "Lakshmikanthan K", email = "letchupkt.dev@gmail.com" }
+]
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+keywords = [
+    "security",
+    "vulnerability-research",
+    "static-analysis",
+    "threat-modeling",
+    "appsec",
+    "ast",
+    "mcp",
+    "ai-security"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "typer>=0.9.0",
+    "httpx>=0.25.0",
+    "pathspec>=0.11.0"
+]
+
+[project.optional-dependencies]
+ai = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0"
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+    "build>=1.0.0",
+    "twine>=5.0.0"
+]
+all = [
+    "semantiq[ai,dev]"
+]
+
+[project.scripts]
+semantiq = "semantiq.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/l3tchupkt/semantiq-security"
+Repository = "https://github.com/l3tchupkt/semantiq-security.git"
+Issues = "https://github.com/l3tchupkt/semantiq-security/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "security: Security and trust-boundary tests",
+    "e2e: End-to-end vulnerability workflow tests"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W", "B", "I", "UP", "SIM"
+]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
