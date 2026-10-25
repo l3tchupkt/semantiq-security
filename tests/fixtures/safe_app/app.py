@@ -8,6 +8,15 @@ import tempfile
 
 from db import execute_safe_query
 
+try:
+    from flask import make_response, redirect
+except ImportError:
+    def make_response(content: str) -> object:  # type: ignore
+        return content
+
+    def redirect(url: str) -> object:  # type: ignore
+        return url
+
 
 def safe_command(dest: str) -> None:
     # SAFE: Argument array without shell=True
@@ -47,3 +56,16 @@ def safe_tempfile() -> str:
     # SAFE: NamedTemporaryFile
     with tempfile.NamedTemporaryFile(delete=False) as f:
         return f.name
+
+
+def safe_xss(user_comment: str) -> object:
+    # SAFE: html.escape applied before response rendering
+    import html
+
+    escaped = html.escape(user_comment)
+    return make_response(f"<div>{escaped}</div>")
+
+
+def safe_redirect() -> object:
+    # SAFE: Static internal redirect target
+    return redirect("/dashboard")

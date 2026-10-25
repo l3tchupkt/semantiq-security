@@ -28,9 +28,12 @@ class ConfidenceLevel(str, Enum):
 
 class ValidationStatus(str, Enum):
     """Finding verification state."""
-    UNVALIDATED = "unvalidated"
+    CANDIDATE = "candidate"
+    EVIDENCE_SUPPORTED = "evidence_supported"
     VALIDATED = "validated"
     INCONCLUSIVE = "inconclusive"
+    NOT_REPRODUCED = "not_reproduced"
+    UNVALIDATED = "unvalidated"
     REJECTED = "rejected"
 
 
@@ -54,6 +57,8 @@ class VulnerabilityCategory(str, Enum):
     INSECURE_CRYPTO = "insecure_crypto"
     CROSS_SITE_SCRIPTING = "cross_site_scripting"
     INSECURE_FILE_OPS = "insecure_file_ops"
+    TEMPLATE_INJECTION = "template_injection"
+    INSECURE_REDIRECT = "insecure_redirect"
     AUTHORIZATION_BYPASS = "authorization_bypass"
     AUTHENTICATION_BYPASS = "authentication_bypass"
     GENERIC = "generic"
@@ -139,7 +144,10 @@ class Finding(BaseModel):
     data_flow: list[DataFlowStep] = Field(default_factory=list)
     impact: str = ""
     prerequisites: list[str] = Field(default_factory=list)
-    validation_status: ValidationStatus = ValidationStatus.UNVALIDATED
+    conditions_required: list[str] = Field(default_factory=list)
+    sanitizers_considered: list[str] = Field(default_factory=list)
+    uncertainty: str = ""
+    validation_status: ValidationStatus = ValidationStatus.CANDIDATE
     validation_result: ValidationResult | None = None
     remediation: str = ""
     remediation_patch: PatchProposal | None = None

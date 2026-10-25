@@ -29,6 +29,8 @@ EXPECTED_CATEGORIES = {
     VulnerabilityCategory.INSECURE_FILE_OPS,
     VulnerabilityCategory.HARDCODED_SECRET,
     VulnerabilityCategory.CROSS_SITE_SCRIPTING,
+    VulnerabilityCategory.TEMPLATE_INJECTION,
+    VulnerabilityCategory.INSECURE_REDIRECT,
 }
 
 

@@ -94,7 +94,7 @@ class ValidationEngine:
             )
 
         return ValidationResult(
-            status=ValidationStatus.VALIDATED,
+            status=ValidationStatus.EVIDENCE_SUPPORTED,
             mode=ValidationMode.STATIC,
             summary=f"Static code flow confirmed: Sink at line {finding.start_line} lacks local defensive sanitization.",
             observed_outcome="Reachable dangerous sink verified in local source.",
@@ -129,9 +129,9 @@ class ValidationEngine:
                 )
             else:
                 return ValidationResult(
-                    status=ValidationStatus.INCONCLUSIVE,
+                    status=ValidationStatus.NOT_REPRODUCED,
                     mode=ValidationMode.TEST_BASED,
-                    summary=f"Test fixture exited with non-zero status ({output.returncode}).",
+                    summary=f"Test fixture exited with non-zero status ({output.returncode}). Issue not reproduced.",
                     observed_outcome=output.stderr[-500:],
                     limitations=["Target regression test did not pass."],
                     is_reproducible=False,

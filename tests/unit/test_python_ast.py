@@ -21,6 +21,9 @@ def test_analyze_python_vulnerabilities(vulnerable_app_dir: Path) -> None:
     assert VulnerabilityCategory.UNSAFE_DESERIALIZATION in categories
     assert VulnerabilityCategory.INSECURE_CRYPTO in categories
     assert VulnerabilityCategory.INSECURE_FILE_OPS in categories
+    assert VulnerabilityCategory.TEMPLATE_INJECTION in categories
+    assert VulnerabilityCategory.CROSS_SITE_SCRIPTING in categories
+    assert VulnerabilityCategory.INSECURE_REDIRECT in categories
 
     # Verify rule IDs
     assert "SQ-PY-001" in rule_ids
@@ -31,6 +34,9 @@ def test_analyze_python_vulnerabilities(vulnerable_app_dir: Path) -> None:
     assert "SQ-PY-006" in rule_ids
     assert "SQ-PY-007" in rule_ids
     assert "SQ-PY-008" in rule_ids
+    assert "SQ-PY-010" in rule_ids
+    assert "SQ-PY-011" in rule_ids
+    assert "SQ-PY-012" in rule_ids
 
     # Verify evidence and line coordinates
     for f in findings:
@@ -95,7 +101,7 @@ def render_greeting():
 """
     findings = analyze_python_source("views.py", code)
     assert len(findings) == 1
-    assert findings[0].category == VulnerabilityCategory.CODE_INJECTION
+    assert findings[0].category == VulnerabilityCategory.TEMPLATE_INJECTION
     assert findings[0].rule_id == "SQ-PY-010"
 
 

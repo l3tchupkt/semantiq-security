@@ -10,6 +10,18 @@ import tempfile
 import requests
 from db import execute_raw_query
 
+try:
+    from flask import make_response, redirect, render_template_string
+except ImportError:
+    def make_response(content: str) -> object:  # type: ignore
+        return content
+
+    def redirect(url: str) -> object:  # type: ignore
+        return url
+
+    def render_template_string(template: str) -> str:  # type: ignore
+        return template
+
 # VULNERABILITY: Hardcoded AWS Credential
 AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
 
@@ -75,4 +87,19 @@ def vulnerable_cross_file_query(cursor: sqlite3.Cursor, category_filter: str) ->
 def vulnerable_eval(user_formula: str) -> object:
     # VULNERABILITY: Code injection via eval
     return eval(user_formula)
+
+
+def vulnerable_ssti(user_name: str) -> str:
+    # VULNERABILITY: Server-Side Template Injection
+    return render_template_string(f"Hello {user_name}!")
+
+
+def vulnerable_xss(user_comment: str) -> object:
+    # VULNERABILITY: Reflected XSS
+    return make_response(f"<div>{user_comment}</div>")
+
+
+def vulnerable_redirect(dest_url: str) -> object:
+    # VULNERABILITY: Open URL Redirection
+    return redirect(dest_url)
 

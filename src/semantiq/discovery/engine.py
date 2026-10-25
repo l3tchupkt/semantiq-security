@@ -11,7 +11,9 @@ from semantiq.analysis.regex_patterns import analyze_javascript_source
 from semantiq.config import ScanConfig
 from semantiq.discovery.secrets import analyze_secrets
 from semantiq.events import EventBus, EventType, ScanEvent
-from semantiq.models import Finding, SeverityLevel
+from semantiq.models import Finding, SeverityLevel, ValidationStatus
+from semantiq.repository.intelligence import RepositoryIntelligence
+from semantiq.repository.safepath import resolve_safe_path
 
 SEVERITY_ORDER = {
     SeverityLevel.CRITICAL: 0,
@@ -32,7 +34,7 @@ def _matches_focus(finding: Finding, focus_categories: list[str]) -> bool:
 
 
 class VulnerabilityDiscoveryEngine:
-    """Orchestrates deterministic and AI-assisted vulnerability discovery."""
+    """Orchestrates deterministic multi-stage vulnerability discovery and verification."""
 
     def __init__(
         self,
@@ -44,6 +46,7 @@ class VulnerabilityDiscoveryEngine:
         self.config = config or ScanConfig()
         self.event_bus = event_bus or EventBus()
         self.context_collector = ContextCollector(repository_root)
+        self.intelligence = RepositoryIntelligence(repository_root)
 
     def scan_files(
         self,
@@ -51,14 +54,21 @@ class VulnerabilityDiscoveryEngine:
         scan_id: str = "scan_local",
     ) -> list[Finding]:
         """Execute deterministic multi-stage discovery over in-scope files."""
-        raw_candidates: list[Finding] = []
+        # Stage A & B: Repository Intelligence & Symbol Table Indexing
+        self.intelligence.index_repository(files)
 
-        # Pass 1: Build cross-file symbol table for Python source files
         python_files = [f for f in files if f.endswith((".py", ".pyi"))]
         symbol_table = build_repository_symbol_table(self.repository_root, python_files)
 
+        # Stage C & D: Deterministic Detection & Cross-Module Analysis
+        raw_candidates: list[Finding] = []
+
         for rel_file in files:
-            full_path = self.repository_root / rel_file
+            try:
+                full_path = resolve_safe_path(self.repository_root, rel_file)
+            except Exception:
+                continue
+
             if not full_path.exists() or not full_path.is_file():
                 continue
 
@@ -99,10 +109,18 @@ class VulnerabilityDiscoveryEngine:
                 )
             )
 
-        # Stage B: Enrich context
+        # Stage F: Evidence Verification & Context Enrichment
+        verified_candidates: list[Finding] = []
         for finding in raw_candidates:
             finding.scan_id = scan_id
-            surrounding, _, _ = self.context_collector.get_surrounding_code(
+
+            # Verify file presence and line bounds
+            target_path = self.repository_root / finding.file_path
+            if not target_path.exists():
+                finding.validation_status = ValidationStatus.REJECTED
+                continue
+
+            surrounding, start_l, end_l = self.context_collector.get_surrounding_code(
                 finding.file_path,
                 finding.start_line,
                 finding.end_line,
@@ -111,9 +129,11 @@ class VulnerabilityDiscoveryEngine:
             if surrounding and finding.code_evidence:
                 finding.code_evidence[0].snippet = surrounding
 
-        # Stage C: Deduplication by fingerprint
+            verified_candidates.append(finding)
+
+        # Stage H: Deduplication by fingerprint
         unique_findings: dict[str, Finding] = {}
-        for candidate in raw_candidates:
+        for candidate in verified_candidates:
             # Filter by focus if configured
             if not _matches_focus(candidate, self.config.focus):
                 continue
@@ -128,7 +148,7 @@ class VulnerabilityDiscoveryEngine:
                     if loc not in existing.locations:
                         existing.locations.append(loc)
 
-        # Stage D: Prioritization
+        # Prioritization by severity
         consolidated = list(unique_findings.values())
         consolidated.sort(key=lambda f: SEVERITY_ORDER.get(f.severity, 99))
 

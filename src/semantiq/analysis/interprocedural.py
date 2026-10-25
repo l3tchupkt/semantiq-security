@@ -139,6 +139,28 @@ class FunctionSummaryExtractor(ast.NodeVisitor):
         elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
             self._check_sink_call(stmt.value)
 
+        # Recursively analyze nested control flow blocks
+        elif isinstance(stmt, ast.If):
+            for s in stmt.body:
+                self._analyze_statement(s)
+            for s in stmt.orelse:
+                self._analyze_statement(s)
+
+        elif isinstance(stmt, ast.Try):
+            for s in stmt.body:
+                self._analyze_statement(s)
+            for handler in stmt.handlers:
+                for s in handler.body:
+                    self._analyze_statement(s)
+            for s in stmt.finalbody:
+                self._analyze_statement(s)
+
+        elif isinstance(stmt, (ast.With, ast.AsyncWith, ast.For, ast.AsyncFor, ast.While)):
+            for s in stmt.body:
+                self._analyze_statement(s)
+            for s in getattr(stmt, "orelse", []):
+                self._analyze_statement(s)
+
     def _check_sink_call(self, call_node: ast.Call) -> None:
         if self._current_summary is None:
             return
@@ -152,27 +174,30 @@ class FunctionSummaryExtractor(ast.NodeVisitor):
         lineno = getattr(call_node, "lineno", 1)
         snippet = self._get_line(lineno).strip()
 
-        # Check SQL execution sink
-        if call_name in {"execute", "executemany"} and call_node.args:
-            taint = self._expr_taint_params(call_node.args[0])
-            for param_idx in taint:
-                pname = self._current_summary.params[param_idx] if param_idx < len(self._current_summary.params) else f"arg_{param_idx}"
-                self._current_summary.internal_sinks.append(
-                    SinkReach(
-                        param_index=param_idx,
-                        param_name=pname,
-                        rule_id="SQ-PY-002",
-                        category=VulnerabilityCategory.SQL_INJECTION,
-                        severity=SeverityLevel.HIGH,
-                        explanation=f"Function parameter '{pname}' reaches database execute() sink in {self._current_summary.name}",
-                        line=lineno,
-                        code_snippet=snippet,
-                        file_path=self.file_path,
+        # 1. SQL execution sink
+        if call_name in {"execute", "executemany", "raw", "extra"} and call_node.args:
+            # Check if parameterized (passing parameters tuple/dict suppresses raw injection)
+            has_params = len(call_node.args) >= 2 or any(k.arg in {"params", "parameters"} for k in call_node.keywords)
+            if not has_params:
+                taint = self._expr_taint_params(call_node.args[0])
+                for param_idx in taint:
+                    pname = self._current_summary.params[param_idx] if param_idx < len(self._current_summary.params) else f"arg_{param_idx}"
+                    self._current_summary.internal_sinks.append(
+                        SinkReach(
+                            param_index=param_idx,
+                            param_name=pname,
+                            rule_id="SQ-PY-002",
+                            category=VulnerabilityCategory.SQL_INJECTION,
+                            severity=SeverityLevel.HIGH,
+                            explanation=f"Function parameter '{pname}' reaches database execute() sink in {self._current_summary.name}",
+                            line=lineno,
+                            code_snippet=snippet,
+                            file_path=self.file_path,
+                        )
                     )
-                )
 
-        # Check Command execution sink
-        elif call_name in {"system", "popen"} and call_node.args:
+        # 2. Command execution sink
+        elif call_name in {"system", "popen", "Popen", "run", "call", "check_output"} and call_node.args:
             taint = self._expr_taint_params(call_node.args[0])
             for param_idx in taint:
                 pname = self._current_summary.params[param_idx] if param_idx < len(self._current_summary.params) else f"arg_{param_idx}"
@@ -184,6 +209,63 @@ class FunctionSummaryExtractor(ast.NodeVisitor):
                         category=VulnerabilityCategory.COMMAND_INJECTION,
                         severity=SeverityLevel.CRITICAL,
                         explanation=f"Function parameter '{pname}' reaches command execution sink in {self._current_summary.name}",
+                        line=lineno,
+                        code_snippet=snippet,
+                        file_path=self.file_path,
+                    )
+                )
+
+        # 3. Dynamic Code Injection sink
+        elif call_name in {"eval", "exec"} and call_node.args:
+            taint = self._expr_taint_params(call_node.args[0])
+            for param_idx in taint:
+                pname = self._current_summary.params[param_idx] if param_idx < len(self._current_summary.params) else f"arg_{param_idx}"
+                self._current_summary.internal_sinks.append(
+                    SinkReach(
+                        param_index=param_idx,
+                        param_name=pname,
+                        rule_id="SQ-PY-009",
+                        category=VulnerabilityCategory.CODE_INJECTION,
+                        severity=SeverityLevel.CRITICAL,
+                        explanation=f"Function parameter '{pname}' reaches dynamic evaluation sink in {self._current_summary.name}",
+                        line=lineno,
+                        code_snippet=snippet,
+                        file_path=self.file_path,
+                    )
+                )
+
+        # 4. Path Traversal sink
+        elif call_name in {"open", "remove", "unlink", "rmtree"} and call_node.args:
+            taint = self._expr_taint_params(call_node.args[0])
+            for param_idx in taint:
+                pname = self._current_summary.params[param_idx] if param_idx < len(self._current_summary.params) else f"arg_{param_idx}"
+                self._current_summary.internal_sinks.append(
+                    SinkReach(
+                        param_index=param_idx,
+                        param_name=pname,
+                        rule_id="SQ-PY-003",
+                        category=VulnerabilityCategory.PATH_TRAVERSAL,
+                        severity=SeverityLevel.HIGH,
+                        explanation=f"Function parameter '{pname}' reaches filesystem sink in {self._current_summary.name}",
+                        line=lineno,
+                        code_snippet=snippet,
+                        file_path=self.file_path,
+                    )
+                )
+
+        # 5. SSRF sink
+        elif call_name in {"get", "post", "urlopen", "request"} and call_node.args:
+            taint = self._expr_taint_params(call_node.args[0])
+            for param_idx in taint:
+                pname = self._current_summary.params[param_idx] if param_idx < len(self._current_summary.params) else f"arg_{param_idx}"
+                self._current_summary.internal_sinks.append(
+                    SinkReach(
+                        param_index=param_idx,
+                        param_name=pname,
+                        rule_id="SQ-PY-004",
+                        category=VulnerabilityCategory.SSRF,
+                        severity=SeverityLevel.HIGH,
+                        explanation=f"Function parameter '{pname}' reaches outbound HTTP request sink in {self._current_summary.name}",
                         line=lineno,
                         code_snippet=snippet,
                         file_path=self.file_path,
@@ -214,18 +296,25 @@ class RepositorySymbolTable:
 
         import_map maps local_alias -> (source_module, original_name)
         """
-        # 1. Check local file definition
         normalized_file = current_file.replace("\\", "/")
+
+        # 1. Check self.method call within same file
+        if func_name.startswith("self."):
+            method_name = func_name[5:]
+            if normalized_file in self.files and method_name in self.files[normalized_file]:
+                return self.files[normalized_file][method_name]
+
+        # 2. Check local file definition
         if normalized_file in self.files and func_name in self.files[normalized_file]:
             return self.files[normalized_file][func_name]
 
-        # 2. Check direct imported symbol (e.g. from db import query_user)
+        # 3. Check direct imported symbol (e.g. from db import query_user)
         if func_name in import_map:
             mod_name, orig_name = import_map[func_name]
             if mod_name in self.modules and orig_name in self.modules[mod_name]:
                 return self.modules[mod_name][orig_name]
 
-        # 3. Check qualified module call (e.g. db.query_user)
+        # 4. Check qualified module call (e.g. db.query_user)
         if "." in func_name:
             parts = func_name.split(".", 1)
             mod_alias, fn = parts[0], parts[1]

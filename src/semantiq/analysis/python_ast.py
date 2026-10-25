@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from semantiq.analysis.frameworks import GLOBAL_FRAMEWORK_REGISTRY
 from semantiq.analysis.interprocedural import (
     RepositorySymbolTable,
     index_source_file,
 )
+from semantiq.analysis.rules import CORE_SANITIZERS, GLOBAL_RULE_REGISTRY
 from semantiq.models import (
     CodeEvidence,
     ConfidenceLevel,
@@ -21,7 +23,7 @@ from semantiq.models import (
     VulnerabilityCategory,
 )
 
-# Known untrusted input sources
+# Base untrusted input sources (extended with framework sources)
 UNTRUSTED_SOURCES = {
     "request.args",
     "request.args.get",
@@ -40,18 +42,9 @@ UNTRUSTED_SOURCES = {
     "os.environ.get",
     "input",
     "getpass.getpass",
-}
+} | GLOBAL_FRAMEWORK_REGISTRY.get_all_input_sources()
 
-# Known sanitizers that neutralize taint
-KNOWN_SANITIZERS = {
-    "int",
-    "float",
-    "bool",
-    "shlex.quote",
-    "html.escape",
-    "re.escape",
-    "werkzeug.utils.secure_filename",
-}
+KNOWN_SANITIZERS = set(CORE_SANITIZERS.keys())
 
 
 def _get_call_name(node: ast.AST) -> str:
@@ -76,10 +69,23 @@ class VarBinding:
     is_tainted: bool
     is_constant_str: bool = False
     is_sanitized: bool = False
+    applied_sanitizers: set[str] = field(default_factory=set)
     constant_val: str | None = None
     source_desc: str = ""
+    history: list[VarBinding] = field(default_factory=list)
     line: int = 1
     snippet: str = ""
+
+    def is_sanitized_for(self, category: VulnerabilityCategory | None) -> bool:
+        """Verify whether an applied sanitizer genuinely neutralizes the specified vulnerability category."""
+        if not category:
+            return self.is_sanitized
+        if self.is_sanitized and not self.applied_sanitizers:
+            return True
+        return any(
+            GLOBAL_RULE_REGISTRY.is_sanitizer_effective(s, category)
+            for s in self.applied_sanitizers
+        )
 
 
 class PythonASTVisitor(ast.NodeVisitor):
@@ -136,8 +142,12 @@ class PythonASTVisitor(ast.NodeVisitor):
                 self._import_map[as_name] = (node.module, alias.name)
         self.generic_visit(node)
 
-    def _is_tainted_expr(self, node: ast.AST) -> tuple[bool, list[VarBinding]]:
-        """Evaluate if an AST expression carries taint from untrusted sources, functions, or variables."""
+    def _is_tainted_expr(
+        self,
+        node: ast.AST,
+        target_category: VulnerabilityCategory | None = None,
+    ) -> tuple[bool, list[VarBinding]]:
+        """Evaluate if an AST expression carries taint, assessing context-specific sanitizers and containers."""
         taint_sources: list[VarBinding] = []
 
         if isinstance(node, ast.Constant):
@@ -147,9 +157,13 @@ class PythonASTVisitor(ast.NodeVisitor):
             call_name = _get_call_name(node)
             lineno = getattr(node, "lineno", 1)
 
-            # Check if sanitized
-            if call_name in KNOWN_SANITIZERS:
-                return False, []
+            # Check if this call is an effective sanitizer for the target category
+            if call_name in CORE_SANITIZERS:
+                sanitizer = CORE_SANITIZERS[call_name]
+                if (target_category and sanitizer.neutralizes(target_category)) or (not target_category):
+                    return False, []
+                # If sanitizer does NOT neutralize target_category (e.g. shlex.quote in SQL),
+                # continue evaluating arguments to preserve dataflow taint!
 
             # Check if direct source of untrusted input
             if call_name in UNTRUSTED_SOURCES or any(call_name.startswith(src) for src in UNTRUSTED_SOURCES):
@@ -166,10 +180,19 @@ class PythonASTVisitor(ast.NodeVisitor):
             fn_summary = self.symbol_table.lookup(self.file_path, call_name, self._import_map)
             if fn_summary and fn_summary.returns_taint_from_params:
                 for param_idx in fn_summary.returns_taint_from_params:
+                    p_name = fn_summary.params[param_idx] if param_idx < len(fn_summary.params) else f"arg_{param_idx}"
+                    arg_node = None
                     if param_idx < len(node.args):
-                        arg_tainted, arg_sources = self._is_tainted_expr(node.args[param_idx])
+                        arg_node = node.args[param_idx]
+                    else:
+                        for kw in node.keywords:
+                            if kw.arg == p_name:
+                                arg_node = kw.value
+                                break
+
+                    if arg_node:
+                        arg_tainted, arg_sources = self._is_tainted_expr(arg_node, target_category=target_category)
                         if arg_tainted:
-                            p_name = fn_summary.params[param_idx] if param_idx < len(fn_summary.params) else f"arg_{param_idx}"
                             binding = VarBinding(
                                 name=call_name,
                                 is_tainted=True,
@@ -197,7 +220,11 @@ class PythonASTVisitor(ast.NodeVisitor):
         if isinstance(node, ast.Name):
             looked_up = self._lookup_var(node.id)
             if looked_up:
-                if looked_up.is_constant_str or looked_up.is_sanitized:
+                if looked_up.is_constant_str:
+                    return False, []
+                if (target_category and looked_up.is_sanitized_for(target_category)) or (
+                    not target_category and looked_up.is_sanitized
+                ):
                     return False, []
                 if looked_up.is_tainted:
                     return True, [looked_up]
@@ -219,30 +246,51 @@ class PythonASTVisitor(ast.NodeVisitor):
             is_tainted = False
             for val in node.values:
                 if isinstance(val, ast.FormattedValue):
-                    t, sources = self._is_tainted_expr(val.value)
+                    t, sources = self._is_tainted_expr(val.value, target_category=target_category)
                     if t:
                         is_tainted = True
                         taint_sources.extend(sources)
             return is_tainted, taint_sources
 
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
-            t_left, src_left = self._is_tainted_expr(node.left)
-            t_right, src_right = self._is_tainted_expr(node.right)
+            t_left, src_left = self._is_tainted_expr(node.left, target_category=target_category)
+            t_right, src_right = self._is_tainted_expr(node.right, target_category=target_category)
             if t_left or t_right:
                 taint_sources.extend(src_left)
                 taint_sources.extend(src_right)
                 return True, taint_sources
             return False, []
 
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            is_tainted = False
+            for elt in node.elts:
+                t, sources = self._is_tainted_expr(elt, target_category=target_category)
+                if t:
+                    is_tainted = True
+                    taint_sources.extend(sources)
+            return is_tainted, taint_sources
+
+        if isinstance(node, ast.Dict):
+            is_tainted = False
+            for val in node.values:
+                t, sources = self._is_tainted_expr(val, target_category=target_category)
+                if t:
+                    is_tainted = True
+                    taint_sources.extend(sources)
+            return is_tainted, taint_sources
+
+        if isinstance(node, ast.Subscript):
+            return self._is_tainted_expr(node.value, target_category=target_category)
+
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
-            t_base, src_base = self._is_tainted_expr(node.func.value)
+            t_base, src_base = self._is_tainted_expr(node.func.value, target_category=target_category)
             taint_sources.extend(src_base)
             for arg in node.args:
-                t_arg, src_arg = self._is_tainted_expr(arg)
+                t_arg, src_arg = self._is_tainted_expr(arg, target_category=target_category)
                 if t_arg:
                     taint_sources.extend(src_arg)
             for kw in node.keywords:
-                t_kw, src_kw = self._is_tainted_expr(kw.value)
+                t_kw, src_kw = self._is_tainted_expr(kw.value, target_category=target_category)
                 if t_kw:
                     taint_sources.extend(src_kw)
             return len(taint_sources) > 0 or t_base, taint_sources
@@ -265,7 +313,8 @@ class PythonASTVisitor(ast.NodeVisitor):
 
         # If function has web route decorators, treat parameters as untrusted inputs
         is_route_handler = any(
-            _get_call_name(dec).endswith((".route", ".get", ".post", ".put", ".delete"))
+            GLOBAL_FRAMEWORK_REGISTRY.is_any_route_decorator(_get_call_name(dec))
+            or _get_call_name(dec).endswith((".route", ".get", ".post", ".put", ".delete"))
             for dec in node.decorator_list
         )
         for arg in node.args.args:
@@ -316,6 +365,7 @@ class PythonASTVisitor(ast.NodeVisitor):
                             is_tainted=source_binding.is_tainted,
                             is_constant_str=source_binding.is_constant_str,
                             is_sanitized=source_binding.is_sanitized,
+                            applied_sanitizers=set(source_binding.applied_sanitizers),
                             constant_val=source_binding.constant_val,
                             source_desc=source_binding.source_desc or f"Alias of '{node.value.id}'",
                             line=start_line,
@@ -324,18 +374,24 @@ class PythonASTVisitor(ast.NodeVisitor):
                 self.generic_visit(node)
                 return
 
-        # 3. Check if assignment value is a known sanitizer (e.g. int(), shlex.quote())
+        # 3. Check if assignment value is a known sanitizer
         if isinstance(node.value, ast.Call):
             call_name = _get_call_name(node.value)
-            if call_name in KNOWN_SANITIZERS:
+            if call_name in CORE_SANITIZERS:
+                is_arg_tainted: bool = False
+                arg_sources: list[VarBinding] = []
+                if node.value.args:
+                    is_arg_tainted, arg_sources = self._is_tainted_expr(node.value.args[0])
+                desc = arg_sources[0].source_desc if arg_sources else f"Sanitized via {call_name}"
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         self.current_scope[target.id] = VarBinding(
                             name=target.id,
-                            is_tainted=False,
+                            is_tainted=is_arg_tainted,
                             is_constant_str=False,
                             is_sanitized=True,
-                            source_desc=f"Sanitized via {call_name}",
+                            applied_sanitizers={call_name},
+                            source_desc=f"{desc} (sanitized via {call_name})",
                             line=start_line,
                             snippet=snippet,
                         )
@@ -352,6 +408,7 @@ class PythonASTVisitor(ast.NodeVisitor):
                     is_tainted=is_tainted,
                     is_constant_str=False,
                     source_desc=desc,
+                    history=list(sources),
                     line=start_line,
                     snippet=snippet,
                 )
@@ -380,11 +437,31 @@ class PythonASTVisitor(ast.NodeVisitor):
                         is_tainted=source_binding.is_tainted,
                         is_constant_str=source_binding.is_constant_str,
                         is_sanitized=source_binding.is_sanitized,
+                        applied_sanitizers=set(source_binding.applied_sanitizers),
                         constant_val=source_binding.constant_val,
                         source_desc=source_binding.source_desc or f"Alias of '{node.value.id}'",
+                        history=list(source_binding.history),
                         line=start_line,
                         snippet=snippet,
                     )
+            elif isinstance(node.value, ast.Call) and _get_call_name(node.value) in CORE_SANITIZERS:
+                call_name = _get_call_name(node.value)
+                is_arg_tainted: bool = False
+                arg_sources: list[VarBinding] = []
+                if node.value.args:
+                    is_arg_tainted, arg_sources = self._is_tainted_expr(node.value.args[0])
+                desc = arg_sources[0].source_desc if arg_sources else f"Sanitized via {call_name}"
+                self.current_scope[node.target.id] = VarBinding(
+                    name=node.target.id,
+                    is_tainted=is_arg_tainted,
+                    is_constant_str=False,
+                    is_sanitized=True,
+                    applied_sanitizers={call_name},
+                    source_desc=f"{desc} (sanitized via {call_name})",
+                    history=list(arg_sources),
+                    line=start_line,
+                    snippet=snippet,
+                )
             else:
                 is_tainted, sources = self._is_tainted_expr(node.value)
                 desc = sources[0].source_desc if sources else f"Assigned expression at line {start_line}"
@@ -393,6 +470,7 @@ class PythonASTVisitor(ast.NodeVisitor):
                     is_tainted=is_tainted,
                     is_constant_str=False,
                     source_desc=desc,
+                    history=list(sources),
                     line=start_line,
                     snippet=snippet,
                 )
@@ -451,6 +529,36 @@ class PythonASTVisitor(ast.NodeVisitor):
 
         self._scopes[-1] = merged
 
+    def visit_Try(self, node: ast.Try) -> None:
+        """Control-flow analysis for try/except/finally with may-taint join semantics."""
+        scope_before = dict(self.current_scope)
+
+        # Visit try body
+        for stmt in node.body:
+            self.visit(stmt)
+        scope_after_body = dict(self.current_scope)
+
+        # Merge states from exception handlers
+        handler_scopes: list[dict[str, VarBinding]] = []
+        for handler in node.handlers:
+            self._scopes[-1] = dict(scope_before)
+            for stmt in handler.body:
+                self.visit(stmt)
+            handler_scopes.append(dict(self.current_scope))
+
+        # Merge try body and handler scopes
+        merged: dict[str, VarBinding] = dict(scope_after_body)
+        for h_scope in handler_scopes:
+            for k, b in h_scope.items():
+                if b.is_tainted or k not in merged:
+                    merged[k] = b
+
+        self._scopes[-1] = merged
+
+        # Finally block always executes
+        for stmt in node.finalbody:
+            self.visit(stmt)
+
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _get_call_name(node)
         start_line = getattr(node, "lineno", 1)
@@ -460,8 +568,18 @@ class PythonASTVisitor(ast.NodeVisitor):
         fn_summary = self.symbol_table.lookup(self.file_path, call_name, self._import_map)
         if fn_summary and fn_summary.internal_sinks:
             for sink_reach in fn_summary.internal_sinks:
+                p_name = sink_reach.param_name
+                arg_node = None
                 if sink_reach.param_index < len(node.args):
-                    is_arg_tainted, arg_sources = self._is_tainted_expr(node.args[sink_reach.param_index])
+                    arg_node = node.args[sink_reach.param_index]
+                else:
+                    for kw in node.keywords:
+                        if kw.arg == p_name:
+                            arg_node = kw.value
+                            break
+
+                if arg_node:
+                    is_arg_tainted, arg_sources = self._is_tainted_expr(arg_node, target_category=sink_reach.category)
                     if is_arg_tainted:
                         self._record_cross_file_finding(
                             rule_id=sink_reach.rule_id,
@@ -495,7 +613,7 @@ class PythonASTVisitor(ast.NodeVisitor):
                     break
 
             if has_shell and node.args:
-                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.COMMAND_INJECTION)
                 if is_tainted:
                     self._record_finding(
                         rule_id="SQ-PY-001",
@@ -515,7 +633,7 @@ class PythonASTVisitor(ast.NodeVisitor):
         # 2. Command Injection: os.system / os.popen
         elif call_name in {"os.system", "os.popen"}:
             if node.args:
-                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.COMMAND_INJECTION)
                 if is_tainted:
                     self._record_finding(
                         rule_id="SQ-PY-001",
@@ -543,7 +661,7 @@ class PythonASTVisitor(ast.NodeVisitor):
                         self.generic_visit(node)
                         return
 
-                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.SQL_INJECTION)
                 if is_tainted:
                     self._record_finding(
                         rule_id="SQ-PY-002",
@@ -563,7 +681,7 @@ class PythonASTVisitor(ast.NodeVisitor):
         # 4. Path Traversal: open() / send_file() with dynamic path
         elif call_name in {"open", "send_file", "flask.send_file"} or call_name.endswith(".open"):
             if node.args:
-                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.PATH_TRAVERSAL)
                 if is_tainted:
                     self._record_finding(
                         rule_id="SQ-PY-003",
@@ -587,7 +705,7 @@ class PythonASTVisitor(ast.NodeVisitor):
             "urllib.request.urlopen",
         }:
             if node.args:
-                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.SSRF)
                 if is_tainted:
                     self._record_finding(
                         rule_id="SQ-PY-004",
@@ -700,7 +818,7 @@ class PythonASTVisitor(ast.NodeVisitor):
         # 10. Code Injection via eval() or exec()
         elif call_name in {"eval", "exec"}:
             if node.args:
-                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.CODE_INJECTION)
                 if is_tainted:
                     self._record_finding(
                         rule_id="SQ-PY-009",
@@ -720,13 +838,13 @@ class PythonASTVisitor(ast.NodeVisitor):
         # 11. Server-Side Template Injection (SSTI)
         elif call_name in {"render_template_string", "jinja2.Template"}:
             if node.args:
-                is_tainted, sources = self._is_tainted_expr(node.args[0])
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.TEMPLATE_INJECTION)
                 if is_tainted:
                     self._record_finding(
                         rule_id="SQ-PY-010",
                         title=f"Server-Side Template Injection (SSTI) via {call_name}",
                         summary=f"Dynamic string template passed to {call_name} permits arbitrary template expression execution.",
-                        category=VulnerabilityCategory.CODE_INJECTION,
+                        category=VulnerabilityCategory.TEMPLATE_INJECTION,
                         severity=SeverityLevel.CRITICAL,
                         confidence=ConfidenceLevel.HIGH,
                         cwe_ids=["CWE-1336"],
@@ -734,6 +852,46 @@ class PythonASTVisitor(ast.NodeVisitor):
                         end_line=end_line,
                         explanation=f"{call_name} executed with dynamic unescaped template string",
                         remediation="Use static template files (render_template) and pass dynamic parameters via context variables.",
+                        taint_sources=sources,
+                    )
+
+        # 12. Cross-Site Scripting (XSS) via raw response reflection
+        elif call_name in {"make_response", "flask.Response", "HttpResponse"}:
+            if node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.CROSS_SITE_SCRIPTING)
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-011",
+                        title="Reflected Cross-Site Scripting (XSS) via HTTP Response",
+                        summary="Unescaped dynamic string returned in raw HTTP response body.",
+                        category=VulnerabilityCategory.CROSS_SITE_SCRIPTING,
+                        severity=SeverityLevel.MEDIUM,
+                        confidence=ConfidenceLevel.HIGH,
+                        cwe_ids=["CWE-79"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation="Direct reflection of user input into HTTP response body without HTML escaping",
+                        remediation="Sanitize output using html.escape() or use Jinja2 template auto-escaping.",
+                        taint_sources=sources,
+                    )
+
+        # 13. Open URL Redirection
+        elif call_name in {"redirect", "flask.redirect", "django.shortcuts.redirect"}:
+            if node.args:
+                is_tainted, sources = self._is_tainted_expr(node.args[0], target_category=VulnerabilityCategory.INSECURE_REDIRECT)
+                if is_tainted:
+                    self._record_finding(
+                        rule_id="SQ-PY-012",
+                        title="Insecure Open URL Redirection via redirect()",
+                        summary="Dynamic destination URL passed to redirect() allows unvalidated redirection.",
+                        category=VulnerabilityCategory.INSECURE_REDIRECT,
+                        severity=SeverityLevel.MEDIUM,
+                        confidence=ConfidenceLevel.MEDIUM,
+                        cwe_ids=["CWE-601"],
+                        start_line=start_line,
+                        end_line=end_line,
+                        explanation="User-controlled URL supplied to redirect without domain whitelist",
+                        remediation="Validate destination URL with relative path check or domain allowlist.",
                         taint_sources=sources,
                     )
 
@@ -774,19 +932,44 @@ class PythonASTVisitor(ast.NodeVisitor):
         )
 
         data_flow: list[DataFlowStep] = []
-        for src in taint_sources:
-            data_flow.append(
-                DataFlowStep(
-                    location=SourceLocation(
-                        file_path=self.file_path,
-                        start_line=src.line,
-                        end_line=src.line,
-                        symbol=self._current_function,
-                        role="source",
-                    ),
-                    description=f"Source: {src.source_desc}",
+        if taint_sources:
+            seen_steps: set[tuple[int, str]] = set()
+
+            def _collect_flow_steps(binding: VarBinding) -> list[VarBinding]:
+                collected: list[VarBinding] = []
+                if binding.history:
+                    for parent in binding.history:
+                        collected.extend(_collect_flow_steps(parent))
+                else:
+                    collected.append(binding)
+                return collected
+
+            flattened: list[VarBinding] = []
+            for src in taint_sources:
+                flattened.extend(_collect_flow_steps(src))
+
+            for idx, step_b in enumerate(flattened):
+                step_key = (step_b.line, step_b.source_desc)
+                if step_key in seen_steps:
+                    continue
+                seen_steps.add(step_key)
+                role = "source" if idx == 0 else "propagation"
+                desc = step_b.source_desc
+                if role == "source" and not desc.startswith("Source:"):
+                    desc = f"Source: {desc}"
+
+                data_flow.append(
+                    DataFlowStep(
+                        location=SourceLocation(
+                            file_path=self.file_path,
+                            start_line=step_b.line,
+                            end_line=step_b.line,
+                            symbol=self._current_function,
+                            role=role,
+                        ),
+                        description=desc,
+                    )
                 )
-            )
 
         data_flow.append(
             DataFlowStep(
@@ -808,6 +991,11 @@ class PythonASTVisitor(ast.NodeVisitor):
             )
         )
 
+        rule = GLOBAL_RULE_REGISTRY.get_rule(rule_id)
+        prereqs = list(rule.prerequisites) if rule else []
+        conditions = list(rule.contextual_constraints) if rule else []
+        sanitizers = list(rule.valid_sanitizers) if rule else []
+
         finding = Finding(
             finding_id=finding_id,
             occurrence_id=occurrence_id,
@@ -825,7 +1013,11 @@ class PythonASTVisitor(ast.NodeVisitor):
             code_evidence=[evidence],
             data_flow=data_flow,
             impact=f"Potential security compromise via cross-file {category.value.replace('_', ' ')}.",
-            validation_status=ValidationStatus.UNVALIDATED,
+            prerequisites=prereqs,
+            conditions_required=conditions,
+            sanitizers_considered=sanitizers,
+            uncertainty="Requires runtime reachability confirmation to prove exploitability.",
+            validation_status=ValidationStatus.CANDIDATE,
             remediation="Sanitize or validate inputs before passing them into library functions, or use parameterized queries inside target function.",
             discovery_backend="python_ast_interprocedural",
         )
@@ -870,17 +1062,41 @@ class PythonASTVisitor(ast.NodeVisitor):
         # Build data flow trace with sources if present
         data_flow: list[DataFlowStep] = []
         if taint_sources:
+            seen_steps: set[tuple[int, str]] = set()
+
+            def _collect_flow_steps(binding: VarBinding) -> list[VarBinding]:
+                collected: list[VarBinding] = []
+                if binding.history:
+                    for parent in binding.history:
+                        collected.extend(_collect_flow_steps(parent))
+                else:
+                    collected.append(binding)
+                return collected
+
+            flattened: list[VarBinding] = []
             for src in taint_sources:
+                flattened.extend(_collect_flow_steps(src))
+
+            for idx, step_b in enumerate(flattened):
+                step_key = (step_b.line, step_b.source_desc)
+                if step_key in seen_steps:
+                    continue
+                seen_steps.add(step_key)
+                role = "source" if idx == 0 else "propagation"
+                desc = step_b.source_desc
+                if role == "source" and not desc.startswith("Source:"):
+                    desc = f"Source: {desc}"
+
                 data_flow.append(
                     DataFlowStep(
                         location=SourceLocation(
                             file_path=self.file_path,
-                            start_line=src.line,
-                            end_line=src.line,
+                            start_line=step_b.line,
+                            end_line=step_b.line,
                             symbol=self._current_function,
-                            role="source",
+                            role=role,
                         ),
-                        description=f"Source: {src.source_desc}",
+                        description=desc,
                     )
                 )
 
@@ -890,6 +1106,11 @@ class PythonASTVisitor(ast.NodeVisitor):
                 description=f"Sink: {explanation} in {self._current_function or 'module scope'}",
             )
         )
+
+        rule = GLOBAL_RULE_REGISTRY.get_rule(rule_id)
+        prereqs = list(rule.prerequisites) if rule else []
+        conditions = list(rule.contextual_constraints) if rule else []
+        sanitizers = list(rule.valid_sanitizers) if rule else []
 
         finding = Finding(
             finding_id=finding_id,
@@ -908,7 +1129,11 @@ class PythonASTVisitor(ast.NodeVisitor):
             code_evidence=[evidence],
             data_flow=data_flow,
             impact=f"Potential security compromise through {category.value.replace('_', ' ')}.",
-            validation_status=ValidationStatus.UNVALIDATED,
+            prerequisites=prereqs,
+            conditions_required=conditions,
+            sanitizers_considered=sanitizers,
+            uncertainty="Requires runtime reachability confirmation to prove exploitability.",
+            validation_status=ValidationStatus.CANDIDATE,
             remediation=remediation,
             discovery_backend="python_ast",
         )
