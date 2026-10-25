@@ -54,7 +54,7 @@ python -m mypy src/semantiq
 
 ### Step 3: Vulnerability Detector Development Pattern
 When introducing a new vulnerability detector:
-1. **Define Rule ID & Metadata**: Follow `SMTQ-<LANG>-<CATEGORY>` format (e.g. `SMTQ-PY-SQLI`, `SMTQ-JS-CMDI`).
+1. **Define Rule ID & Metadata**: Follow `SQ-<LANG>-<NNN>` format (e.g. `SQ-PY-001`, `SQ-PY-013`).
 2. **Implement AST / Pattern Visitor**:
    - Traverse the syntax tree to inspect Call nodes, argument vectors, and keyword arguments.
    - Differentiate static literals from dynamic formatting, f-strings, and tainted variables.
@@ -65,9 +65,23 @@ When introducing a new vulnerability detector:
    - Add a vulnerable test case in `tests/fixtures/vulnerable_app/`.
    - Add an equivalent safe/remediated test case in `tests/fixtures/safe_app/` to prevent false positives.
 5. **Add Regression Tests**:
-   - Add dedicated unit tests in `tests/unit/test_python_ast.py` or `tests/unit/test_regex_patterns.py`.
+   - Add dedicated unit tests in `tests/unit/test_python_ast.py` or `tests/unit/test_investigation_orchestrator.py`.
 
-### Step 4: AI Provider Adapter & Anti-Hallucination Pattern
+### Step 4: Architectural Investigation & Orchestration Pattern
+When investigating complex vulnerabilities (BOLA/IDOR, Missing Auth, Data Leakage):
+1. **Formulate Concrete Hypothesis**:
+   - Identify entry point, parameters, sensitive sink, and required preconditions.
+2. **Trace Call Graph Backwards**:
+   - Trace from internal sink to web route boundary or entry point.
+3. **Inspect Surrounding Defenses & Counterevidence**:
+   - Look for route decorators (`@login_required`, `@admin_required`, `@roles_accepted`).
+   - Check inline guards (session lookups, ownership comparison clauses in queries).
+4. **Flag Dynamic Dispatch & Unresolved Calls**:
+   - Mark findings affected by unresolved dispatch as `INCONCLUSIVE` rather than assuming safety.
+5. **Enforce Investigation Budgets**:
+   - Bound call depth, inspected files, hypotheses count, and timeout limits.
+
+### Step 5: AI Provider Adapter & Anti-Hallucination Pattern
 When modifying or adding provider adapters:
 1. Implement the abstract methods in `BaseAIProvider`:
    - `analyze_code(snippet, context)`
@@ -81,7 +95,7 @@ When modifying or adding provider adapters:
    ```
 4. Update `MockProvider` to reflect deterministic test expectations.
 
-### Step 5: Safe Remediation & Patch Verification
+### Step 6: Safe Remediation & Patch Verification
 When implementing automated remediation:
 1. Generate unified diffs with exact line offsets.
 2. In-memory patch verification:
@@ -89,7 +103,7 @@ When implementing automated remediation:
    - Re-parse the patched content using `ast.parse()` to verify syntax validity.
    - Re-run the AST detector to confirm that the vulnerable pattern is eliminated.
 
-### Step 6: Full Verification Suite
+### Step 7: Full Verification Suite
 Execute the full testing and quality pipeline:
 ```powershell
 # 1. Linting
@@ -109,7 +123,7 @@ python -m build
 python -m twine check dist/*
 ```
 
-### Step 7: Git Staging, Review & Push
+### Step 8: Git Staging, Review & Push
 1. Inspect unstaged and staged changes:
    ```powershell
    git status

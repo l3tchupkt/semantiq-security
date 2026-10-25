@@ -69,3 +69,37 @@ def safe_xss(user_comment: str) -> object:
 def safe_redirect() -> object:
     # SAFE: Static internal redirect target
     return redirect("/dashboard")
+
+
+class App:
+    def route(self, path: str, methods: list[str] | None = None):
+        def decorator(f):
+            return f
+        return decorator
+
+app = App()
+
+def login_required(f):
+    return f
+
+def admin_required(f):
+    return f
+
+
+@app.route("/api/documents/<doc_id>")
+@login_required
+def safe_idor_document(doc_id: str) -> list:
+    # SAFE: Scoped by session user ID
+    session_uid = "user_123"
+    cursor = sqlite3.connect("app.db").cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND owner_id = ?", (doc_id, session_uid))
+    return cursor.fetchall()
+
+
+@app.route("/api/admin/users/<user_id>", methods=["DELETE"])
+@admin_required
+def safe_admin_delete(user_id: str) -> str:
+    # SAFE: Protected by admin_required decorator
+    cursor = sqlite3.connect("app.db").cursor()
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return "deleted"

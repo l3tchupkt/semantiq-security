@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from semantiq.models import SeverityLevel, VulnerabilityCategory
+from semantiq.analysis.frameworks import GLOBAL_FRAMEWORK_REGISTRY
+from semantiq.models import (
+    AuthBoundary,
+    CoverageReport,
+    SeverityLevel,
+    UnresolvedCall,
+    VulnerabilityCategory,
+)
 from semantiq.repository.safepath import resolve_safe_path
 
 
@@ -90,9 +98,17 @@ class RepositoryIntelligence:
         self.security_sinks: list[SecuritySinkLocation] = []
         self.frameworks_detected: set[str] = set()
         self.security_configs: dict[str, Any] = {}
+        self.unresolved_calls: list[UnresolvedCall] = []
+        self.auth_boundaries: list[AuthBoundary] = []
+        self.multi_tenant_indicators: set[str] = set()
+        self.global_middleware: list[str] = []
+        self.parsed_files_count: int = 0
+        self.failed_parsing_files: list[str] = []
+        # Incremental scan content-hash cache: rel_path -> (sha256, symbols, imports, auth_boundaries)
+        self._content_cache: dict[str, tuple[str, list[IndexedSymbol], list[IndexedImport], list[AuthBoundary]]] = {}
 
     def index_repository(self, in_scope_files: list[str]) -> None:
-        """Deterministically index all in-scope files in the repository."""
+        """Deterministically index all in-scope files in the repository using content-hash caching."""
         for rel_path in in_scope_files:
             try:
                 full_path = resolve_safe_path(self.repo_root, rel_path)
@@ -123,17 +139,28 @@ class RepositoryIntelligence:
             )
 
             if lang == "python":
-                self._index_python_file(rel_path, content)
+                # Check incremental content cache
+                cached = self._content_cache.get(rel_path)
+                if cached and cached[0] == sha:
+                    self.symbols[rel_path] = list(cached[1])
+                    self.imports[rel_path] = list(cached[2])
+                    self.auth_boundaries.extend(cached[3])
+                    self.parsed_files_count += 1
+                else:
+                    self._index_python_file(rel_path, content, sha)
 
-    def _index_python_file(self, rel_path: str, source_code: str) -> None:
+    def _index_python_file(self, rel_path: str, source_code: str, sha: str = "") -> None:
         """Parse Python source and extract facts (symbols, imports, calls, sinks, routes)."""
         try:
             tree = ast.parse(source_code, filename=rel_path)
+            self.parsed_files_count += 1
         except (SyntaxError, ValueError):
+            self.failed_parsing_files.append(rel_path)
             return
 
         file_symbols: list[IndexedSymbol] = []
         file_imports: list[IndexedImport] = []
+        file_auth_boundaries: list[AuthBoundary] = []
 
         for node in ast.iter_child_nodes(tree):
             # Imports
@@ -189,14 +216,28 @@ class RepositoryIntelligence:
                 )
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        self._index_function(item, rel_path, parent_class=node.name, out_symbols=file_symbols)
+                        self._index_function(
+                            item,
+                            rel_path,
+                            parent_class=node.name,
+                            out_symbols=file_symbols,
+                            out_auth_boundaries=file_auth_boundaries,
+                        )
 
             # Top-level Functions
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self._index_function(node, rel_path, parent_class=None, out_symbols=file_symbols)
+                self._index_function(
+                    node,
+                    rel_path,
+                    parent_class=None,
+                    out_symbols=file_symbols,
+                    out_auth_boundaries=file_auth_boundaries,
+                )
 
         self.symbols[rel_path] = file_symbols
         self.imports[rel_path] = file_imports
+        if sha:
+            self._content_cache[rel_path] = (sha, file_symbols, file_imports, file_auth_boundaries)
 
         # Walk entire file AST for calls and sinks
         self._index_file_calls_and_sinks(tree, rel_path)
@@ -207,16 +248,19 @@ class RepositoryIntelligence:
         rel_path: str,
         parent_class: str | None,
         out_symbols: list[IndexedSymbol],
+        out_auth_boundaries: list[AuthBoundary],
     ) -> None:
         params = [arg.arg for arg in node.args.args]
-        decorators = [self._format_decorator(d) for d in node.decorator_list]
+        decorators: list[str] = []
 
         is_entry = False
         framework = None
         http_method = None
         route_path = None
 
-        for dec in decorators:
+        for dec_node in node.decorator_list:
+            dec = self._format_decorator(dec_node)
+            decorators.append(dec)
             dec_lower = dec.lower()
             if any(k in dec_lower for k in [".route", ".get", ".post", ".put", ".delete", "api_view", "action"]):
                 is_entry = True
@@ -227,6 +271,15 @@ class RepositoryIntelligence:
                 elif "api_view" in dec_lower:
                     framework = "django_rest_framework"
 
+                # Extract route path if constant in decorator args
+                if (
+                    isinstance(dec_node, ast.Call)
+                    and dec_node.args
+                    and isinstance(dec_node.args[0], ast.Constant)
+                    and isinstance(dec_node.args[0].value, str)
+                ):
+                    route_path = dec_node.args[0].value
+
                 # Extract HTTP method if available
                 for m in ["get", "post", "put", "delete", "patch"]:
                     if f".{m}" in dec_lower:
@@ -235,6 +288,33 @@ class RepositoryIntelligence:
 
         qname = f"{parent_class}.{node.name}" if parent_class else node.name
         kind = "method" if parent_class else ("async_function" if isinstance(node, ast.AsyncFunctionDef) else "function")
+
+        if is_entry:
+            auth_decs = [
+                d for d in decorators
+                if GLOBAL_FRAMEWORK_REGISTRY.is_auth_decorator(d)
+                or any(k in d.lower() for k in [
+                    "login_required", "admin_required", "permission_required",
+                    "roles_accepted", "roles_required", "jwt_required", "token_required",
+                    "authenticated", "requires_auth"
+                ])
+            ]
+            is_auth = len(auth_decs) > 0
+            is_admin = any("admin" in d.lower() or "superuser" in d.lower() for d in decorators)
+            is_tenant = any(p in {"tenant_id", "org_id", "workspace_id"} for p in params)
+            boundary = AuthBoundary(
+                route_path=route_path or f"/{node.name}",
+                handler_name=qname,
+                file_path=rel_path,
+                line=node.lineno,
+                http_methods=[http_method] if http_method else ["GET"],
+                is_authenticated=is_auth,
+                auth_decorators=auth_decs,
+                is_admin_only=is_admin,
+                is_tenant_scoped=is_tenant,
+            )
+            self.auth_boundaries.append(boundary)
+            out_auth_boundaries.append(boundary)
 
         out_symbols.append(
             IndexedSymbol(
@@ -281,6 +361,13 @@ class RepositoryIntelligence:
                 self.generic_visit(node)
                 self.curr = prev
 
+            def visit_Assign(self, node: ast.Assign) -> None:
+                for target in node.targets:
+                    t_name = getattr(target, "id", "") or getattr(target, "attr", "")
+                    if any(k in t_name.lower() for k in ["tenant_id", "org_id", "organization_id", "workspace_id"]):
+                        self.outer.multi_tenant_indicators.add(t_name)
+                self.generic_visit(node)
+
             def visit_Call(self, node: ast.Call) -> None:
                 call_name = ""
                 if isinstance(node.func, ast.Name):
@@ -290,14 +377,28 @@ class RepositoryIntelligence:
 
                 lineno = getattr(node, "lineno", 1)
 
-                # Record call edge
-                if call_name:
+                # Record call edge or unresolved call
+                if call_name and call_name != "getattr":
                     self.outer.call_graph.append(
                         CallEdge(
                             caller_file=rel_path,
                             caller_symbol=self.curr,
                             callee_name=call_name,
                             line=lineno,
+                        )
+                    )
+                if not call_name or call_name in {"getattr", "setattr"}:
+                    expr_name = call_name or "dynamic_call"
+                    if hasattr(ast, "unparse"):
+                        with contextlib.suppress(Exception):
+                            expr_name = ast.unparse(node)
+                    self.outer.unresolved_calls.append(
+                        UnresolvedCall(
+                            file_path=rel_path,
+                            line=lineno,
+                            caller_symbol=self.curr,
+                            call_expression=expr_name,
+                            reason="dynamic_dispatch_or_unresolved_expression",
                         )
                     )
 
@@ -363,3 +464,34 @@ class RepositoryIntelligence:
 
         visitor = CallVisitor(self)
         visitor.visit(tree)
+
+    def compute_coverage(self, in_scope_files: list[str]) -> CoverageReport:
+        """Compute actionable coverage report with explicit gap accounting."""
+        total_in_scope = len(in_scope_files)
+        parsed = self.parsed_files_count
+        skipped = max(0, total_in_scope - parsed)
+        coverage_ratio = (parsed / total_in_scope * 100.0) if total_in_scope > 0 else 100.0
+
+        gap_notes: list[str] = []
+        if self.failed_parsing_files:
+            gap_notes.append(f"{len(self.failed_parsing_files)} files could not be parsed as valid AST syntax")
+        if self.unresolved_calls:
+            gap_notes.append(f"{len(self.unresolved_calls)} call sites involve dynamic dispatch or unresolved external targets")
+
+        languages_detected = {m.language for m in self.file_metadata.values()}
+        unsupported = [lang for lang in languages_detected if lang not in {"python", "javascript", "typescript"}]
+        if unsupported:
+            gap_notes.append(f"Languages requiring specialized external parsers: {', '.join(unsupported)}")
+
+        return CoverageReport(
+            total_files_discovered=len(self.file_metadata),
+            in_scope_files=total_in_scope,
+            parsed_files=parsed,
+            skipped_files=skipped,
+            failed_parsing_files=list(self.failed_parsing_files),
+            languages_supported=["python", "javascript", "typescript"],
+            languages_unsupported=unsupported,
+            unresolved_calls_count=len(self.unresolved_calls),
+            coverage_percentage=round(coverage_ratio, 2),
+            gap_notes=gap_notes,
+        )

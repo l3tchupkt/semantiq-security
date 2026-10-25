@@ -141,9 +141,20 @@ class Semantiq:
             )
         )
 
-        # Stage 3: Vulnerability Discovery
-        engine = VulnerabilityDiscoveryEngine(repo_path, config=scan_cfg, event_bus=self.event_bus)
+        # Stage 3: Vulnerability Discovery & Deep Investigation
+        engine = VulnerabilityDiscoveryEngine(
+            repo_path,
+            config=scan_cfg,
+            ai_provider=self.ai_provider,
+            event_bus=self.event_bus,
+        )
         findings = engine.scan_files(inspection.in_scope_files, scan_id=scan_id)
+        coverage_report = engine.get_coverage(inspection.in_scope_files)
+
+        # Update inspection with coverage and architectural facts
+        inspection.coverage = coverage_report
+        inspection.unresolved_calls = list(engine.intelligence.unresolved_calls)
+        inspection.auth_boundaries = list(engine.intelligence.auth_boundaries)
 
         # Stage 4: Default Static Validation for findings
         val_engine = ValidationEngine(repo_path, config=self.config.validation)
@@ -160,6 +171,8 @@ class Semantiq:
             "excluded_files_count": len(inspection.excluded_files),
             "findings_count": len(findings),
             "threat_model_entry_points": len(threat_model.entry_points),
+            "coverage_percentage": coverage_report.coverage_percentage,
+            "unresolved_calls_count": coverage_report.unresolved_calls_count,
         }
 
         result = ScanResult(
@@ -173,6 +186,7 @@ class Semantiq:
             started_at=started_at,
             completed_at=completed_at,
             coverage_summary=coverage_summary,
+            coverage=coverage_report,
         )
 
         # Save to storage

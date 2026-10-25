@@ -103,3 +103,37 @@ def vulnerable_redirect(dest_url: str) -> object:
     # VULNERABILITY: Open URL Redirection
     return redirect(dest_url)
 
+
+class App:
+    def route(self, path: str, methods: list[str] | None = None):
+        def decorator(f):
+            return f
+        return decorator
+
+app = App()
+
+def login_required(f):
+    return f
+
+
+@app.route("/api/user/settings")
+@login_required
+def user_settings_view() -> str:
+    return "settings"
+
+
+@app.route("/api/documents/<doc_id>")
+def vulnerable_idor_document(doc_id: str) -> list:
+    # VULNERABILITY: Broken Object-Level Authorization (IDOR) without user ownership check
+    cursor = sqlite3.connect("app.db").cursor()
+    cursor.execute(f"SELECT * FROM documents WHERE id = '{doc_id}'")
+    return cursor.fetchall()
+
+
+@app.route("/api/admin/users/<user_id>", methods=["DELETE"])
+def vulnerable_missing_auth_delete(user_id: str) -> str:
+    # VULNERABILITY: Missing Function-Level Authorization on administrative delete action
+    cursor = sqlite3.connect("app.db").cursor()
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return "deleted"
+

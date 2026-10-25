@@ -66,13 +66,18 @@ semantiq-security/
     ├── repository/
     │   ├── safepath.py         # Path traversal, symlink & NTFS alternate stream defenses
     │   ├── git.py              # Git repository introspection & diff extraction
-    │   └── inspector.py        # PathSpec-based file inventory and filtering
+    │   ├── inspector.py        # PathSpec-based file inventory and filtering
+    │   └── intelligence.py     # Content-hash caching, symbol indexing, auth boundaries & coverage reporting
     ├── analysis/
-    │   ├── python_ast.py       # Deterministic Python AST visitor (12+ rule categories)
+    │   ├── python_ast.py       # Deterministic Python AST visitor (17+ rule categories)
     │   ├── regex_patterns.py   # Polyglot structural pattern matcher (JS/TS)
+    │   ├── interprocedural.py  # Call graph traversal & cross-function taint propagation
+    │   ├── frameworks.py       # Web framework route & decorator knowledge base
+    │   ├── rules.py            # Declarative rule registry (SQ-PY-001 through SQ-PY-017)
     │   └── context.py          # Surrounding source code context collector
     ├── discovery/
     │   ├── secrets.py          # Shannon entropy & token regex detector with redaction
+    │   ├── orchestrator.py     # 7-phase evidence investigation, hypothesis testing & budget management
     │   └── engine.py           # Multi-stage discovery pipeline & deduplication
     ├── threat_model/
     │   └── generator.py        # Deterministic route, entrypoint & boundary extractor
@@ -163,3 +168,29 @@ semantiq-security/
 5. **Remote Push**:
    - Push to `origin main` using `git push origin main`.
    - Never use destructive force-pushes (`git push --force`).
+
+---
+
+## 7. Repository Investigation & Evidence Principles
+
+1. **Deterministic Candidate Establishment**:
+   - Every investigated vulnerability begins with deterministic code facts (AST dataflow, route boundary definitions, symbol index).
+2. **Context-Aware Control Inspection**:
+   - Absence of an auth check in a single function does not prove vulnerability; investigate callers, middleware, decorator chains, and inline session checks.
+3. **Counterevidence Evaluation**:
+   - Actively search for mitigating controls (session filters, role decorators, tenant scoping). If counterevidence exists, degrade confidence or discard false positives.
+4. **Explicit Uncertainty & Dynamic Dispatch**:
+   - Never assume unresolved calls or dynamic dispatch (`getattr`, variable functions) are safe. Flag them explicitly as `INCONCLUSIVE` with actionable gap notes.
+5. **Investigation Budget Constraints**:
+   - Respect configured budgets (`max_depth`, `max_files_inspected`, `max_hypotheses`, `max_model_requests`, `timeout_seconds`). Do not let deep call chains hang scans.
+
+---
+
+## 8. Evaluation & Comparative Integrity
+
+1. **Dual Labeled Fixtures**:
+   - Every vulnerability rule must have both a vulnerable fixture and a safe counterexample to measure false positives and true positives.
+2. **Fair Comparative Integrity**:
+   - Never claim parity with external systems (such as Codex Security) without independent, reproducible benchmarks run under identical conditions.
+3. **No Metric Fabrication**:
+   - Never hardcode or fabricate benchmark metrics, precision, recall, or test outcomes. All reported metrics must derive directly from executed benchmark runs.

@@ -9,9 +9,11 @@ from semantiq.analysis.interprocedural import build_repository_symbol_table
 from semantiq.analysis.python_ast import analyze_python_source
 from semantiq.analysis.regex_patterns import analyze_javascript_source
 from semantiq.config import ScanConfig
+from semantiq.discovery.orchestrator import InvestigationOrchestrator
 from semantiq.discovery.secrets import analyze_secrets
 from semantiq.events import EventBus, EventType, ScanEvent
-from semantiq.models import Finding, SeverityLevel, ValidationStatus
+from semantiq.models import CoverageReport, Finding, SeverityLevel, ValidationStatus
+from semantiq.providers.base import BaseAIProvider
 from semantiq.repository.intelligence import RepositoryIntelligence
 from semantiq.repository.safepath import resolve_safe_path
 
@@ -40,13 +42,26 @@ class VulnerabilityDiscoveryEngine:
         self,
         repository_root: Path,
         config: ScanConfig | None = None,
+        ai_provider: BaseAIProvider | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self.repository_root = repository_root
         self.config = config or ScanConfig()
+        self.ai_provider = ai_provider
         self.event_bus = event_bus or EventBus()
         self.context_collector = ContextCollector(repository_root)
         self.intelligence = RepositoryIntelligence(repository_root)
+        self.orchestrator = InvestigationOrchestrator(
+            repository_root=self.repository_root,
+            intelligence=self.intelligence,
+            config=self.config,
+            ai_provider=self.ai_provider,
+            event_bus=self.event_bus,
+        )
+
+    def get_coverage(self, files: list[str]) -> CoverageReport:
+        """Calculate repository coverage metrics."""
+        return self.intelligence.compute_coverage(files)
 
     def scan_files(
         self,
@@ -131,9 +146,16 @@ class VulnerabilityDiscoveryEngine:
 
             verified_candidates.append(finding)
 
+        # Stage G: Deep Repository Vulnerability Investigation
+        investigated_candidates = self.orchestrator.investigate(
+            verified_candidates,
+            files,
+            scan_id=scan_id,
+        )
+
         # Stage H: Deduplication by fingerprint
         unique_findings: dict[str, Finding] = {}
-        for candidate in verified_candidates:
+        for candidate in investigated_candidates:
             # Filter by focus if configured
             if not _matches_focus(candidate, self.config.focus):
                 continue

@@ -31,6 +31,8 @@ EXPECTED_CATEGORIES = {
     VulnerabilityCategory.CROSS_SITE_SCRIPTING,
     VulnerabilityCategory.TEMPLATE_INJECTION,
     VulnerabilityCategory.INSECURE_REDIRECT,
+    VulnerabilityCategory.BROKEN_OBJECT_LEVEL_AUTH,
+    VulnerabilityCategory.AUTHORIZATION_BYPASS,
 }
 
 
@@ -65,6 +67,9 @@ async def run_benchmark():
 
         print("\n[Benchmark 1] Vulnerable Repository Analysis (Recall):")
         print(f"  Files scanned: {len(vuln_res.inspection.in_scope_files)}")
+        if vuln_res.coverage:
+            print(f"  Coverage: {vuln_res.coverage.coverage_percentage:.1f}% ({vuln_res.coverage.parsed_files}/{vuln_res.coverage.in_scope_files} parsed)")
+            print(f"  Unresolved call sites: {vuln_res.coverage.unresolved_calls_count}")
         print(f"  Total findings: {tp}")
         print(f"  Scan duration: {vuln_time:.2f} ms")
         print(f"  Categories discovered: {len(discovered_categories)} / {len(EXPECTED_CATEGORIES)}")

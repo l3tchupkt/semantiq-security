@@ -61,6 +61,11 @@ class VulnerabilityCategory(str, Enum):
     INSECURE_REDIRECT = "insecure_redirect"
     AUTHORIZATION_BYPASS = "authorization_bypass"
     AUTHENTICATION_BYPASS = "authentication_bypass"
+    BROKEN_OBJECT_LEVEL_AUTH = "broken_object_level_auth"
+    CROSS_TENANT_LEAKAGE = "cross_tenant_leakage"
+    SENSITIVE_DATA_EXPOSURE = "sensitive_data_exposure"
+    BUSINESS_LOGIC_FLAW = "business_logic_flaw"
+    INSECURE_DIRECT_FILE_ACCESS = "insecure_direct_file_access"
     GENERIC = "generic"
 
 
@@ -125,6 +130,57 @@ class PatchVerificationResult(BaseModel):
     re_scan_finding_count: int = 0
 
 
+class UnresolvedCall(BaseModel):
+    """Call site that could not be statically dispatched or resolved."""
+    file_path: str
+    line: int
+    caller_symbol: str
+    call_expression: str
+    reason: str  # "dynamic_dispatch", "foreign_library", "unsupported_construct", "runtime_callback"
+
+
+class AuthBoundary(BaseModel):
+    """Route-level authentication and authorization boundary."""
+    route_path: str
+    handler_name: str
+    file_path: str
+    line: int
+    http_methods: list[str] = Field(default_factory=list)
+    is_authenticated: bool = False
+    auth_decorators: list[str] = Field(default_factory=list)
+    is_admin_only: bool = False
+    is_tenant_scoped: bool = False
+
+
+class CoverageReport(BaseModel):
+    """Repository-level analysis coverage metrics and gaps."""
+    total_files_discovered: int = 0
+    in_scope_files: int = 0
+    parsed_files: int = 0
+    skipped_files: int = 0
+    failed_parsing_files: list[str] = Field(default_factory=list)
+    languages_supported: list[str] = Field(default_factory=list)
+    languages_unsupported: list[str] = Field(default_factory=list)
+    unresolved_calls_count: int = 0
+    coverage_percentage: float = 100.0
+    gap_notes: list[str] = Field(default_factory=list)
+
+
+class InvestigationHypothesis(BaseModel):
+    """Structured hypothesis constructed during vulnerability investigation."""
+    hypothesis_id: str
+    rule_id: str
+    target_symbol: str
+    entry_point: str
+    sensitive_operation: str
+    statement: str
+    preconditions: list[str] = Field(default_factory=list)
+    supporting_evidence: list[str] = Field(default_factory=list)
+    counterevidence: list[str] = Field(default_factory=list)
+    disposition: str = "open"  # "confirmed", "mitigated", "unresolved", "false_positive"
+    uncertainty: str = ""
+
+
 class Finding(BaseModel):
     """Core vulnerability finding model."""
     finding_id: str
@@ -146,6 +202,10 @@ class Finding(BaseModel):
     prerequisites: list[str] = Field(default_factory=list)
     conditions_required: list[str] = Field(default_factory=list)
     sanitizers_considered: list[str] = Field(default_factory=list)
+    counterevidence: list[str] = Field(default_factory=list)
+    supporting_evidence: list[str] = Field(default_factory=list)
+    attack_chain: list[str] = Field(default_factory=list)
+    hypothesis: InvestigationHypothesis | None = None
     uncertainty: str = ""
     validation_status: ValidationStatus = ValidationStatus.CANDIDATE
     validation_result: ValidationResult | None = None
@@ -233,6 +293,9 @@ class RepositoryInspection(BaseModel):
     excluded_files: list[str] = Field(default_factory=list)
     config_files: list[str] = Field(default_factory=list)
     security_policy_path: str | None = None
+    coverage: CoverageReport | None = None
+    unresolved_calls: list[UnresolvedCall] = Field(default_factory=list)
+    auth_boundaries: list[AuthBoundary] = Field(default_factory=list)
 
 
 class ScanResult(BaseModel):
@@ -247,3 +310,4 @@ class ScanResult(BaseModel):
     started_at: str
     completed_at: str
     coverage_summary: dict[str, Any] = Field(default_factory=dict)
+    coverage: CoverageReport | None = None

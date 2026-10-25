@@ -21,3 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Typer-based CLI with `inspect`, `scan`, `scan-diff`, `threat-model`, `findings`, `validate`, `patch`, `verify-patch`, `report`, `doctor`, and `mcp`.
 - SQLite scan history persistence and SARIF 2.1.0, JSON, and Markdown export capabilities.
 - Unit, integration, security, and e2e test suite with controlled vulnerable test fixtures.
+- Repository-wide investigation orchestrator (`InvestigationOrchestrator`) with 7-phase evidence gathering, hypothesis construction, and counterevidence evaluation.
+- Architectural and logic vulnerability rules: BOLA/IDOR (`SQ-PY-013`), Missing Function-Level Auth (`SQ-PY-014`), Cross-Tenant Leakage (`SQ-PY-015`), Insecure Direct File Access (`SQ-PY-016`), and Sensitive Data Exposure (`SQ-PY-017`).
+- Repository intelligence upgrade with sha256 content caching, HTTP auth boundary mapping, multi-tenant indicators, and explicit unresolved call/dynamic dispatch tracking (`UnresolvedCall`).
+- Actionable coverage reporting (`CoverageReport`) with gap notes, skipped files, unparsed files, and unsupported language tracking.
+- Bounded investigation budgets (`InvestigationBudget`) with call depth, files, hypotheses, model requests, and execution timeouts.

@@ -190,6 +190,10 @@ class FrameworkRegistry:
     def is_any_auth_decorator(self, decorator_name: str) -> bool:
         return any(m.is_auth_decorator(decorator_name) for m in self.models.values())
 
+    def is_auth_decorator(self, decorator_name: str) -> bool:
+        """Alias for is_any_auth_decorator."""
+        return self.is_any_auth_decorator(decorator_name)
+
 
 # Global framework registry singleton
 GLOBAL_FRAMEWORK_REGISTRY = FrameworkRegistry()
