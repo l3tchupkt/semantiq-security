@@ -82,6 +82,8 @@ class EdgeKind(str, Enum):
     QUERIES = "queries"
     ACCESSES_RESOURCE = "accesses_resource"
     CONTROLS_TENANT = "controls_tenant"
+    TRANSITIONS_STATE = "transitions_state"
+    CROSSES_BOUNDARY = "crosses_boundary"
     MITIGATES = "mitigates"
 
 

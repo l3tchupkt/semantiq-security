@@ -42,7 +42,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Corrected unsound tenant heuristic: eliminated unvalidated parameter name checks (`tenant_id`, `org_id`) and enforced genuine session context lookups (`session.get("tenant_id")`) and guard decorators.
   * Created 8 difficult interprocedural flow fixtures (`tests/fixtures/interprocedural_app` and `tests/fixtures/interprocedural_safe`): 3+ module database parameter flow, tenant resource access by object ID, route authorization divergence, helper function SSRF dispatch, sanitized vs unsanitized branch execution, class method inheritance resolution, dynamic dispatch marking, and safe counterexample.
   * Audited JavaScript/TypeScript frontend semantics: disclosed structural regex scanner limitations and added explicit gap tracking for closures, callbacks, optional chaining, template strings, and TypeScript generics.
-  * Verified persistent memory and incremental graph invalidation (`SemanticProgramGraph.remove_file`) across cold, warm, changed, and deleted file operations.
-  * End-to-end MCP JSON-RPC audit testing bounded outputs, error resilience, and autonomous AI investigation workflow.
+- AI-First Deep Vulnerability Discovery Engine (`AIVulnerabilityInvestigator`):
+  * 12-step iterative investigation loop operating independently of predefined static vulnerability rules.
+  * Multi-strategy hypothesis generation: architecture & trust boundary traversal, cross-component attack chains, inconsistent route controls, business-logic & state-machine transitions, and candidate signal amplification.
+  * Multi-factor hypothesis ranking balancing severity, reachability, novelty, and uncertainty.
+  * Bounded on-demand context retrieval (`get_source_excerpt`, graph neighborhoods) preventing whole-repo context dumps.
+  * AI self-critique & counterevidence analysis seeking neutralizing controls, sanitizers, or state preconditions to disprove ungrounded hypotheses.
+- Structured Attack Chain Representation:
+  * Added `AttackChain` and `AttackChainStep` models capturing attacker capability, preconditions, ordered sequence of operations, trust boundaries crossed, supporting evidence, counterevidence, and unresolved links.
+  * Extended `Finding` with `structured_attack_chain: AttackChain | None = None`.
+  * Added `CHAINED_VULNERABILITY` and `STATE_MACHINE_BYPASS` categories to `VulnerabilityCategory`.
+- Semantic Program Graph (SPG) Upgrades:
+  * Implemented path-sensitive distinction: control-flow paths (`find_control_flow_paths`), data-flow paths (`find_data_flow_paths`), and call reachability.
+  * Added `find_alternate_entry_points` to detect inconsistent security controls across alternate route handlers reaching identical sinks.
+  * Added `find_attack_chains` discovering multi-step paths from route entry points to sensitive operations.
+  * Added `get_source_excerpt` for safe, bounded source line extraction with syntax detection.
+  * Added `TRANSITIONS_STATE` and `CROSSES_BOUNDARY` to `EdgeKind`.
+- Persistent Investigation Memory:
+  * Added `InvestigationMemoryRecord` and methods `save_repository_memory`, `load_repository_memory`, and `invalidate_stale_memory` in `SQLiteStorage`.
+  * Persists version-aware architectural knowledge, entry points, explored paths, hypotheses, and counterevidence catalogs.
+- MCP Server & SDK Client Additions:
+  * Added `semantiq_get_source_excerpt` and `semantiq_query_attack_chains` tools to MCP server and client facade.
+- Agent Skill Upgrade (`SKILL.md`):
+  * Practical security research procedure distinguishing 5 epistemological levels (Source Facts, Static Inferences, AI Hypotheses, Reproduced Behavior, Unresolved Uncertainty).
+  * Comprehensive guide for the 12-step AI investigation loop.
+- Demonstration Fixtures & Tests Beyond Existing Rules:
+  * Created `ecommerce_multistep_app` and `ecommerce_multistep_safe` fixtures representing multi-step order processing and fulfillment state machine bypass.
+  * Unit tests in `tests/unit/test_ai_investigation_engine.py` (7 tests).
+  * Integration tests in `tests/integration/test_discovery_beyond_rules.py` (3 tests) demonstrating discovery of state machine bypass and 0 false positives on the secure counterpart.
+
 
 

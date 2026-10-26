@@ -1,9 +1,9 @@
 ---
 name: semantiq-security-investigation
-description: Evidence-driven agent operating procedure for repository security analysis, semantic program graph exploration, multi-hop vulnerability investigation, and verified remediation using Semantiq Security.
+description: Evidence-driven agent operating procedure for AI-first deep vulnerability discovery, multi-hop attack chains, semantic program graph exploration, and verified remediation using Semantiq Security.
 ---
 
-# Semantiq Security Investigation & Engineering Skill
+# Semantiq Security AI-First Investigation & Engineering Skill
 
 > [!IMPORTANT]
 > **Prerequisites & Constraints**:
@@ -11,94 +11,127 @@ description: Evidence-driven agent operating procedure for repository security a
 > - Package version must remain locked at `0.1.0`.
 > - Keep the repository strictly private. Do not publish packages or create release tags.
 > - Never execute target application code without isolated sandboxing.
-> - Never fabricate benchmark metrics or claim parity with external systems (Codex Security) without reproducible evidence.
+> - Never fabricate AI calls, source evidence, validation outcomes, or benchmark metrics.
+> - Never claim equivalence with Codex Security without independent, reproducible evidence.
 
 This skill provides the authoritative operational guide for autonomous agents conducting security assessments using the **Semantiq Security** SDK, CLI, and Model Context Protocol (MCP) server.
 
 ---
 
-## 1. Agent Security Investigation Methodology
+## 1. Epistemological Grounding: 5 Analysis Levels
 
-```mermaid
-graph TD
-    Scope[1. Establish Scope & Inventory] --> TM[2. Threat Model & Boundaries]
-    TM --> Graph[3. Build Semantic Program Graph]
-    Graph --> Trace[4. Trace Interprocedural Paths]
-    Trace --> Hypo[5. Formulate Bounded Hypotheses]
-    Hypo --> Counter[6. Search for Counterevidence & Guards]
-    Counter --> Verify[7. Local Source Citation Verification]
-    Verify --> Validate[8. Target Validation & Remediation]
-```
+Every security finding, claim, and hypothesis must be classified into its precise epistemological category:
 
-### Phase 1: Establish Assessment Scope
-Before inspecting source code, identify repository boundaries, language distribution, and file inventory:
-- **MCP Tool**: `semantiq_inspect_repository(path=".")`
-- **Actions**:
-  1. Record total files on disk vs in-scope files.
-  2. Identify supported languages (Python, JavaScript, TypeScript) and unsupported extensions.
-  3. Inspect Git revision and dirty state.
-  4. Note any ignored or excluded directories (`.git`, `node_modules`, `venv`, `build`).
+| Level | Classification | Definition & Evidentiary Standard |
+| :--- | :--- | :--- |
+| **L1** | **Source Facts** | Verifiable AST syntax, file bytes, line numbers, decorators, imports, and parameters extracted directly from disk. |
+| **L2** | **Static Inferences** | Propagated interprocedural dataflows, call graphs, and type inferences with deterministic confidence. |
+| **L3** | **AI Hypotheses** | Model-generated conjectures regarding potential exploitability, bypass routes, or business logic inconsistencies. Must be grounded in L1 facts. |
+| **L4** | **Reproduced Behavior** | Findings confirmed through isolated test execution, reproducible fixtures, or verifiable constraint solvers. |
+| **L5** | **Unresolved Uncertainty** | Regions involving dynamic dispatch (`getattr`, `eval`), external libraries, runtime callbacks, or incomplete dependencies where safety cannot be proven. |
 
-### Phase 2: Query Architecture & Threat Model
-Identify entry points, trust boundaries, and protected assets:
-- **MCP Tool**: `semantiq_build_threat_model(path=".")`
-- **Actions**:
-  1. Map all external HTTP routes, request handlers, and CLI entry points.
-  2. Enumerate trust boundaries separating unauthenticated callers from internal services.
-  3. Catalog sensitive database models, file storage, and external network sinks.
-
-### Phase 3: Semantic Program Graph (SPG) Exploration
-Query the versioned, typed Semantic Program Graph to understand code relationships:
-- **MCP Tools**:
-  - `semantiq_query_symbols(path, query, kind, file_path)`: Inspect functions, classes, and routes.
-  - `semantiq_query_callers_callees(path, symbol_name, direction="both")`: Examine inbound and outbound call relationships.
-  - `semantiq_query_neighborhood(path, node_id, radius=1)`: Extract bounded subgraphs for local reasoning without reading entire repositories.
-
-### Phase 4: Interprocedural Data-Flow & Reachability Tracing
-Trace attacker-controlled parameters from routes to sensitive operations across helper services:
-- **MCP Tools**:
-  - `semantiq_query_route_reachability(path, route_path, sink_kind)`: Trace call chains from routes to sensitive sinks (`query`, `process_exec`, `external_request`, `file_operation`).
-  - `semantiq_query_dataflow_path(path, source_symbol, sink_category, max_depth=10)`: Trace end-to-end dataflow, checking for parameter propagation and context-sensitive sanitizers.
-
-### Phase 5: Authorization & Tenant Boundary Inspection
-Distinguish authentication from object authorization, and trace tenant scoping invariants:
-- **MCP Tools**:
-  - `semantiq_query_authorization_path(path, route_path)`: Inspect route authentication decorators (`@login_required`), authorization checks (`@admin_required`, `@roles_accepted`), and database queries executed.
-  - `semantiq_query_tenant_isolation(path, with_ownership_check)`: Identify database access paths lacking tenant ownership comparison clauses (`WHERE tenant_id = ?`).
-
-### Phase 6: Formulate & Challenge Hypotheses
-Develop explicit vulnerability hypotheses with required preconditions and counterevidence:
-- **MCP Tool**: `semantiq_record_hypothesis(path, statement, target_symbol, entry_point, rule_id, disposition)`
-- **Rule of Evidence**:
-  - Do not assert missing authorization merely because a local function lacks an inline guard; check the route decorator and middleware stack.
-  - Look for sanitizers: `validate_url()` neutralizes SSRF; `int()` neutralizes SQL injection; `escape()` neutralizes XSS.
-  - Check state machine invariants: ensure fulfilling an order requires prior payment verification (`SQ-PY-018`).
-
-### Phase 7: Read & Locally Verify Source Citations
-Verify that all model-generated code claims correspond to real lines on disk:
-- **MCP Tool**: `semantiq_get_evidence(finding_id)`
-- **Actions**:
-  1. Verify file paths exist and lines are within file bounds.
-  2. Compare code snippet text with actual disk contents.
-  3. Reject or mark unvalidated any hypothesis citing non-existent lines or hallucinated helper functions.
-
-### Phase 8: Analysis Gap Accounting & Uncertainty Reporting
-Inspect dynamic dispatches, unparsed files, and foreign libraries:
-- **MCP Tool**: `semantiq_get_analysis_gaps(path)`
-- **Actions**:
-  - Report dynamic dispatches (`getattr()`, `eval()`) as `INCONCLUSIVE` rather than assuming safety.
-  - Report unparsed or skipped files as partial coverage in the evaluation summary.
-
-### Phase 9: Controlled Validation & Remediation
-Validate findings through static dataflow or targeted regression tests:
-- **MCP Tools**:
-  - `semantiq_validate_finding(finding_id, mode="static")`
-  - `semantiq_propose_patch(finding_id)`
-  - `semantiq_verify_patch(finding_id)`: Applies patch to an in-memory temporary AST buffer, verifying syntax validity and re-scanning to ensure vulnerability elimination.
+> [!CAUTION]
+> Never report an L3 AI hypothesis as an L4 confirmed exploit. Distinguish control flow from data flow, and mark unverified assumptions as `INCONCLUSIVE` or `CANDIDATE`.
 
 ---
 
-## 2. Complete MCP Tool Suite Reference
+## 2. The 12-Step AI Investigation Loop
+
+```mermaid
+graph TD
+    S1[1. Context Model] --> S2[2. Diverse Hypotheses]
+    S2 --> S3[3. Multi-Factor Rank]
+    S3 --> S4[4. Bounded Context]
+    S4 --> S5[5. Code Inspection]
+    S5 --> S6[6. Path Tracing]
+    S6 --> S7[7. Missing Controls]
+    S7 --> S8[8. Self-Critique & Counterevidence]
+    S8 --> S9[9. Targeted Validation]
+    S9 --> S10[10. Attack Chain Synthesis]
+    S10 --> S11[11. Budget Enforcement]
+    S11 --> S12[12. Final Finding / Memory]
+```
+
+### Step 1: Security-Context Modeling
+Extract application entry points, trust boundaries, sensitive sinks, and unresolved regions:
+- **MCP Tools**: `semantiq_inspect_repository(path=".")`, `semantiq_build_threat_model(path=".")`
+- Catalog HTTP routes, background handlers, external sockets, and data persistence boundaries.
+
+### Step 2: Diverse Hypothesis Generation across Complementary Strategies
+Identify vulnerability hypotheses beyond predefined rules using multiple strategies:
+1. **Architecture & Trust-Boundary Traversal**: Public unauthenticated routes reaching sensitive database queries, process executions, or external networks.
+2. **Graph-Guided Dataflow**: Attacker-controlled parameters propagated across helper functions to sensitive sinks without sanitizers.
+3. **Inconsistent Security Controls**: Alternate routes reaching the same sensitive operation where one route enforces authentication/roles and another omits them.
+4. **Business-Logic & State Transitions**: Critical state advancements (e.g. order fulfillment, account upgrade, payment dispatch) executed without prior status verification.
+5. **Cross-Component Attack Chains**: Multi-hop progressions spanning multiple service modules and privilege boundaries.
+6. **Rule Findings as Amplification Signals**: Elevating AST pattern findings into interprocedural attack paths.
+
+### Step 3: Multi-Factor Ranking
+Prioritize hypotheses by composite score:
+- **Potential Impact**: Remote code execution / SQLi (40) > State machine bypass / Auth bypass (32) > SSRF / File access (25) > Information exposure (15).
+- **Reachability**: Public unauthenticated endpoint (30) > Authenticated endpoint (20) > Internal helper (10).
+- **Novelty**: Cross-component multi-step chain (20) > Local function flaw (10).
+- **Uncertainty & Risk**: Actively investigate high-impact leads with unverified neutralizing controls.
+
+### Step 4: Bounded On-Demand Context Retrieval
+Never dump entire repositories into LLM prompts. Retrieve targeted context:
+- **MCP Tool**: `semantiq_get_source_excerpt(path, file_path, start_line, end_line, max_lines=50)`
+- **MCP Tool**: `semantiq_query_neighborhood(path, node_id, radius=1)`
+- Fetch exact source lines for entry points, target operations, and immediate graph neighbors.
+
+### Step 5: Deep Code Inspection
+Inspect actual source code rather than trusting derived summaries:
+- Verify variable names, type conversions (`int()`, `float()`), parameter bindings, and context dictionaries.
+- Confirm whether input values undergo transformations that neutralize the attack vector.
+
+### Step 6: Path-Sensitive Tracing
+Distinguish control flow from data flow:
+- **Control Flow**: Call reachability (`semantiq_query_route_reachability`). Shows what *can execute*.
+- **Data Flow**: Value propagation (`semantiq_query_dataflow_path`). Shows where *attacker data flows*.
+- Do not treat call reachability as proof of dataflow or exploitability.
+
+### Step 7: Search for Missing Controls & Bypasses
+Check for security controls along the execution path:
+- **Route Decorators**: `@login_required`, `@admin_required`, `@roles_accepted`.
+- **Inline Guards**: `current_user.is_authenticated`, `session.get('user_id')`, `abort(403)`.
+- **Tenant Scoping**: Queries filtering by `tenant_id` or `org_id`.
+- **Alternate Routes**: Peer routes reaching the same handler (`semantiq_query_authorization_path`).
+
+### Step 8: AI Self-Critique & Counterevidence Search
+Act as a security skeptic. Search aggressively for evidence that disproves the hypothesis:
+- Does upstream middleware sanitize or validate the payload?
+- Is the route restricted to admin privileges?
+- Is there a state precondition invariant enforced earlier in the workflow?
+- If counterevidence exists, mark disposition as `mitigated` or `false_positive`.
+
+### Step 9: Controlled Targeted Validation
+Validate findings safely without intrusive production testing:
+- **MCP Tool**: `semantiq_validate_finding(finding_id, mode="static")`
+- Verify dataflow paths against formal taint rules and sanitizers.
+
+### Step 10: Structured Attack-Chain Synthesis
+Synthesize the complete attack chain connecting starting points to ultimate impacts:
+- **MCP Tool**: `semantiq_query_attack_chains(path, max_depth=8)`
+- Identify:
+  1. Attacker starting point and capability (`unauthenticated_attacker` vs `authenticated_user`).
+  2. Required preconditions (network access, parameter control, state prerequisites).
+  3. Ordered sequence of operations with source locations and code snippets.
+  4. Trust boundaries crossed.
+  5. Potential impact and validation requirements.
+
+### Step 11: Budget & Resource Bounds
+Respect investigation limits:
+- Maximum search depth, maximum files inspected, maximum hypotheses evaluated, and timeout seconds.
+- Stop exploration and record explicit `INCONCLUSIVE` outcomes when limits are reached.
+
+### Step 12: Production of Grounded Findings & Persistent Memory
+Record findings backed by verifiable source citations:
+- Persist hypotheses in repository memory: `semantiq_record_hypothesis(path, statement, target_symbol, entry_point, rule_id)`.
+- Invalidate stale memory when source code revision changes.
+
+---
+
+## 3. Complete MCP Tool Suite Reference
 
 | Tool Name | Purpose | Primary Inputs |
 | :--- | :--- | :--- |
@@ -122,10 +155,12 @@ Validate findings through static dataflow or targeted regression tests:
 | `semantiq_get_analysis_gaps` | Report dynamic dispatch and unparsed files | `path` |
 | `semantiq_record_hypothesis` | Record hypothesis in persistent memory | `path`, `statement`, `rule_id` |
 | `semantiq_get_evidence` | Retrieve verified code citations and dataflow | `finding_id` |
+| `semantiq_get_source_excerpt` | Bounded source code lines and syntax details | `path`, `file_path`, `start_line`, `end_line`, `max_lines` |
+| `semantiq_query_attack_chains` | Discover multi-step cross-component attack chains | `path`, `max_depth` |
 
 ---
 
-## 3. Engineering Quality Checklist
+## 4. Engineering Quality Checklist
 
 Before finalizing any task or committing changes:
 - [ ] Version declaration across all files is strictly `0.1.0`.

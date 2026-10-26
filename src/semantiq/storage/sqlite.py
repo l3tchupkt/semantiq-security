@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ from semantiq.graph.models import (
 from semantiq.models import (
     Finding,
     InvestigationHypothesis,
+    InvestigationMemoryRecord,
     ScanResult,
 )
 
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS repository_memory (
     entry_points_json TEXT NOT NULL,
     security_boundaries_json TEXT NOT NULL,
     analysis_gaps_json TEXT NOT NULL,
+    memory_json TEXT DEFAULT '{}',
     updated_at TEXT NOT NULL,
     PRIMARY KEY(repo_path, source_revision)
 );
@@ -168,6 +170,8 @@ class SQLiteStorage:
     def _init_db(self) -> None:
         with self._connection() as conn:
             conn.executescript(SCHEMA_V2)
+            with suppress(sqlite3.OperationalError):
+                conn.execute("ALTER TABLE repository_memory ADD COLUMN memory_json TEXT DEFAULT '{}';")
             cur = conn.execute("SELECT version FROM schema_version;")
             row = cur.fetchone()
             if not row:
@@ -426,3 +430,81 @@ class SQLiteStorage:
                 return [InvestigationHypothesis.model_validate_json(row["full_json"]) for row in cur.fetchall()]
         except sqlite3.Error as error:
             raise StorageError(f"Database error fetching hypotheses: {error}") from error
+
+    def save_repository_memory(self, memory: InvestigationMemoryRecord) -> None:
+        """Persist structured repository memory and security architecture model."""
+        try:
+            with self._connection() as conn, conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO repository_memory
+                    (repo_path, source_revision, architecture_summary_json, entry_points_json, security_boundaries_json, analysis_gaps_json, memory_json, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        memory.repo_path,
+                        memory.source_revision,
+                        json.dumps(memory.architecture_summary),
+                        json.dumps(memory.entry_points),
+                        json.dumps(memory.security_boundaries),
+                        json.dumps(memory.analysis_gaps),
+                        memory.model_dump_json(),
+                        memory.updated_at,
+                    ),
+                )
+        except sqlite3.Error as error:
+            raise StorageError(f"Database error saving repository memory: {error}") from error
+
+    def load_repository_memory(self, repo_path: str, source_revision: str) -> InvestigationMemoryRecord | None:
+        """Load persistent repository memory for a given path and revision."""
+        try:
+            with self._connection() as conn:
+                cur = conn.execute(
+                    "SELECT * FROM repository_memory WHERE repo_path = ? AND source_revision = ?;",
+                    (repo_path, source_revision),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+
+                row_dict = dict(row)
+                memory_raw = row_dict.get("memory_json")
+                if memory_raw and memory_raw != "{}":
+                    try:
+                        return InvestigationMemoryRecord.model_validate_json(memory_raw)
+                    except Exception:
+                        pass
+
+                return InvestigationMemoryRecord(
+                    repo_path=row["repo_path"],
+                    source_revision=row["source_revision"],
+                    architecture_summary=json.loads(row["architecture_summary_json"]),
+                    entry_points=json.loads(row["entry_points_json"]),
+                    security_boundaries=json.loads(row["security_boundaries_json"]),
+                    analysis_gaps=json.loads(row["analysis_gaps_json"]),
+                    updated_at=row["updated_at"],
+                )
+        except sqlite3.Error as error:
+            raise StorageError(f"Database error loading repository memory: {error}") from error
+
+    def invalidate_stale_memory(self, repo_path: str, current_revision: str) -> int:
+        """Invalidate obsolete graph and memory caches when source code revision changes."""
+        if not current_revision:
+            return 0
+        try:
+            with self._connection() as conn, conn:
+                cur_mem = conn.execute(
+                    "DELETE FROM repository_memory WHERE repo_path = ? AND source_revision != ? AND source_revision != '';",
+                    (repo_path, current_revision),
+                )
+                cur_nodes = conn.execute(
+                    "DELETE FROM graph_nodes WHERE repo_path = ? AND source_revision != ? AND source_revision != '';",
+                    (repo_path, current_revision),
+                )
+                cur_edges = conn.execute(
+                    "DELETE FROM graph_edges WHERE repo_path = ? AND source_revision != ? AND source_revision != '';",
+                    (repo_path, current_revision),
+                )
+                return cur_mem.rowcount + cur_nodes.rowcount + cur_edges.rowcount
+        except sqlite3.Error as error:
+            raise StorageError(f"Database error invalidating stale memory: {error}") from error

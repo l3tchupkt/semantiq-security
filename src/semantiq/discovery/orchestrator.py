@@ -18,6 +18,8 @@ from semantiq.events import EventBus
 from semantiq.graph.builder import GraphBuilder
 from semantiq.graph.graph import SemanticProgramGraph
 from semantiq.models import (
+    AttackChain,
+    AttackChainStep,
     CodeEvidence,
     ConfidenceLevel,
     DataFlowStep,
@@ -84,6 +86,26 @@ class InvestigationOrchestrator:
         # Phase 1: Architectural Vulnerability Discovery (BOLA/IDOR, Missing Auth, Cross-Tenant, Logic Flaws)
         arch_findings = self._discover_architectural_vulnerabilities(scan_id)
         all_candidates = list(candidates) + arch_findings
+
+        # Phase 1b: AI-First Deep Multi-Step Vulnerability Discovery
+        from semantiq.discovery.ai_investigator import AIVulnerabilityInvestigator
+
+        ai_investigator = AIVulnerabilityInvestigator(
+            repository_root=self.repository_root,
+            intelligence=self.intelligence,
+            graph=self.graph,
+            ai_provider=self.ai_provider,
+            config=self.config,
+            budget=self.budget,
+            event_bus=self.event_bus,
+            in_scope_files=in_scope_files,
+        )
+        ai_findings = ai_investigator.investigate_repository(candidates, scan_id=scan_id)
+        existing_fps = {c.calculate_fingerprint() for c in all_candidates}
+        for af in ai_findings:
+            if af.calculate_fingerprint() not in existing_fps:
+                all_candidates.append(af)
+                existing_fps.add(af.calculate_fingerprint())
 
         model_requests_used = 0
 
@@ -757,7 +779,10 @@ class InvestigationOrchestrator:
         entry_point: str,
         call_chain: list[str],
     ) -> list[str]:
-        """Synthesize concrete attack chain progression."""
+        """Synthesize concrete attack chain progression and structured AttackChain."""
+        if finding.structured_attack_chain is not None and finding.attack_chain:
+            return finding.attack_chain
+
         steps: list[str] = [
             f"1. Entry: Attacker transmits crafted payload to entry point '{entry_point}'"
         ]
@@ -765,6 +790,50 @@ class InvestigationOrchestrator:
             steps.append(f"2. Dispatch: Request traverses internal call chain ({' -> '.join(call_chain)})")
         steps.append(f"3. Execution: Payload reaches dangerous operation at {finding.file_path}:{finding.start_line}")
         steps.append(f"4. Impact: {finding.impact or 'Unauthorized system manipulation or data compromise'}")
+
+        if finding.structured_attack_chain is None:
+            achain_steps = [
+                AttackChainStep(
+                    step_number=1,
+                    location=SourceLocation(file_path=finding.file_path, start_line=finding.start_line, end_line=finding.end_line, symbol=entry_point, role="entry_point"),
+                    operation_type="entry_point",
+                    description=f"Attacker transmits payload to '{entry_point}'",
+                    actor_capability="unauthenticated_attacker",
+                )
+            ]
+            if len(call_chain) > 1:
+                achain_steps.append(
+                    AttackChainStep(
+                        step_number=2,
+                        location=SourceLocation(file_path=finding.file_path, start_line=finding.start_line, end_line=finding.end_line, role="dispatch"),
+                        operation_type="dispatch",
+                        description=f"Internal call traversal: {' -> '.join(call_chain)}",
+                        actor_capability="unauthenticated_attacker",
+                    )
+                )
+            achain_steps.append(
+                AttackChainStep(
+                    step_number=len(achain_steps) + 1,
+                    location=SourceLocation(file_path=finding.file_path, start_line=finding.start_line, end_line=finding.end_line, role="sink"),
+                    operation_type="sensitive_sink",
+                    description=f"Payload reaches dangerous operation at {finding.file_path}:{finding.start_line}",
+                    actor_capability="unauthenticated_attacker",
+                    supporting_evidence=list(finding.code_evidence),
+                    counterevidence=list(finding.counterevidence),
+                )
+            )
+            finding.structured_attack_chain = AttackChain(
+                chain_id=f"achain_{finding.finding_id}",
+                title=f"Attack Chain for {finding.title}",
+                starting_point=entry_point,
+                target_operation=f"{finding.file_path}:{finding.start_line}",
+                attacker_capability="unauthenticated_attacker",
+                preconditions=list(finding.prerequisites),
+                steps=achain_steps,
+                trust_boundaries=["public_to_internal"],
+                potential_impact=finding.impact or "Unauthorized system manipulation",
+                is_exploitable_estimate=len(finding.counterevidence) == 0,
+            )
         return steps
 
     def _check_inline_auth_guard(self, rel_path: str, start_line: int) -> bool:

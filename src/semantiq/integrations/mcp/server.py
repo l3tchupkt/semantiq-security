@@ -262,6 +262,33 @@ TOOLS_MANIFEST = [
             },
             "required": ["finding_id"]
         }
+    },
+    {
+        "name": "semantiq_get_source_excerpt",
+        "description": "Retrieve bounded source code lines and syntax details for code inspection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "file_path": {"type": "string", "description": "File path relative to repository root"},
+                "start_line": {"type": "integer", "description": "Starting line number (1-indexed)"},
+                "end_line": {"type": "integer", "description": "Ending line number (inclusive)"},
+                "max_lines": {"type": "integer", "default": 50, "description": "Maximum number of lines to return"}
+            },
+            "required": ["path", "file_path", "start_line", "end_line"]
+        }
+    },
+    {
+        "name": "semantiq_query_attack_chains",
+        "description": "Discover multi-step cross-component attack chains from routes to sensitive operations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "max_depth": {"type": "integer", "default": 8, "description": "Maximum traversal depth"}
+            },
+            "required": ["path"]
+        }
     }
 ]
 
@@ -448,6 +475,21 @@ class MCPServer:
 
         elif name == "semantiq_get_evidence":
             return await self.security.get_evidence(args["finding_id"])
+
+        elif name == "semantiq_get_source_excerpt":
+            return await self.security.get_source_excerpt(
+                target=args["path"],
+                file_path=args["file_path"],
+                start_line=args["start_line"],
+                end_line=args["end_line"],
+                max_lines=args.get("max_lines", 50),
+            )
+
+        elif name == "semantiq_query_attack_chains":
+            return await self.security.query_attack_chains(
+                target=args["path"],
+                max_depth=args.get("max_depth", 8),
+            )
 
         else:
             raise ValueError(f"Unknown MCP tool: {name}")

@@ -575,3 +575,25 @@ class Semantiq:
             "uncertainty": finding.uncertainty,
             "validation_status": finding.validation_status.value,
         }
+
+    async def get_source_excerpt(
+        self,
+        target: str | Path,
+        file_path: str,
+        start_line: int,
+        end_line: int,
+        max_lines: int = 50,
+    ) -> dict[str, Any]:
+        """Safely retrieve bounded source excerpt for agent code inspection."""
+        graph = await self.get_semantic_graph(target)
+        return graph.get_source_excerpt(file_path, start_line, end_line, max_lines=max_lines)
+
+    async def query_attack_chains(
+        self,
+        target: str | Path,
+        max_depth: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Discover multi-step cross-component attack chains from routes to sensitive operations."""
+        graph = await self.get_semantic_graph(target)
+        return graph.find_attack_chains(max_depth=max_depth)
+

@@ -178,7 +178,7 @@ class PythonFrontend(LanguageFrontend):
                 is_route = False
                 for dec in decorators:
                     dec_lower = dec.lower()
-                    if any(k in dec_lower for k in [".route", ".get", ".post", ".put", ".delete", "api_view"]):
+                    if any(k in dec_lower for k in ["route", ".get", ".post", ".put", ".delete", "api_view"]):
                         is_route = True
                         break
 

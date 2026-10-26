@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from semantiq.graph.models import (
@@ -13,6 +14,7 @@ from semantiq.graph.models import (
     NodeKind,
     RelationshipProvenance,
 )
+from semantiq.repository.safepath import resolve_safe_path
 
 
 class SemanticProgramGraph:
@@ -439,3 +441,217 @@ class SemanticProgramGraph:
             "auth_controls_count": len(self._nodes_by_kind[NodeKind.AUTH_CONTROL]),
             "unresolved_count": len(self.find_unresolved_regions()),
         }
+
+    def get_source_excerpt(
+        self,
+        file_path: str,
+        start_line: int,
+        end_line: int,
+        max_lines: int = 50,
+    ) -> dict[str, Any]:
+        """Safely extract bounded source code excerpt for agent reasoning."""
+        clean_file = file_path.replace("\\", "/")
+        try:
+            if self.repository_root:
+                full_path = resolve_safe_path(self.repository_root, clean_file)
+            else:
+                full_path = Path(clean_file)
+            if not full_path.exists() or not full_path.is_file():
+                return {
+                    "file_path": clean_file,
+                    "snippet": "",
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "total_lines": 0,
+                    "error": "File not found",
+                }
+            lines = full_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            total_lines = len(lines)
+            s = max(1, start_line)
+            e = min(total_lines, max(s, end_line))
+            is_truncated = False
+            if e - s + 1 > max_lines:
+                e = s + max_lines - 1
+                is_truncated = True
+
+            snippet = "\n".join(lines[s - 1: e])
+            lang = "python" if clean_file.endswith(".py") else ("javascript" if clean_file.endswith((".js", ".jsx", ".ts", ".tsx")) else "text")
+
+            return {
+                "file_path": clean_file,
+                "start_line": s,
+                "end_line": e,
+                "total_lines": total_lines,
+                "is_truncated": is_truncated,
+                "language": lang,
+                "snippet": snippet,
+            }
+        except Exception as exc:
+            return {
+                "file_path": clean_file,
+                "snippet": "",
+                "start_line": start_line,
+                "end_line": end_line,
+                "total_lines": 0,
+                "error": str(exc),
+            }
+
+    def find_control_flow_paths(
+        self,
+        source_id: str,
+        target_id: str,
+        max_depth: int = 10,
+    ) -> list[list[str]]:
+        """Find execution/control flow paths from source to target (CALLS, REACHES, CONTROLS_FLOW)."""
+        control_edges = {EdgeKind.CALLS, EdgeKind.REACHES, EdgeKind.CONTROLS_FLOW}
+        return self.find_paths(source_id, target_id, edge_kinds=control_edges, max_depth=max_depth)
+
+    def find_data_flow_paths(
+        self,
+        source_id: str,
+        target_id: str,
+        max_depth: int = 10,
+    ) -> list[list[str]]:
+        """Find data-propagation paths from source to target (DATA_FLOWS_TO, PASSES_ARGUMENT, RETURNS_TO)."""
+        df_edges = {EdgeKind.DATA_FLOWS_TO, EdgeKind.PASSES_ARGUMENT, EdgeKind.RETURNS_TO}
+        return self.find_paths(source_id, target_id, edge_kinds=df_edges, max_depth=max_depth)
+
+    def find_alternate_entry_points(self, sink_id: str) -> list[dict[str, Any]]:
+        """Discover all distinct entry routes reaching a sink and compare security postures."""
+        routes = self.find_nodes(kind=NodeKind.ROUTE)
+        results: list[dict[str, Any]] = []
+
+        for r in routes:
+            paths = self.find_paths(r.id, sink_id, max_depth=8)
+            if paths:
+                boundary_info = self.find_boundary_crossings(r.id)
+                results.append({
+                    "route_id": r.id,
+                    "route_path": r.properties.get("route_path", r.label),
+                    "handler": r.properties.get("handler", r.label),
+                    "path_count": len(paths),
+                    "shortest_path": paths[0],
+                    "hop_count": len(paths[0]) - 1,
+                    "is_authenticated": boundary_info.get("is_authenticated", False),
+                    "auth_controls": boundary_info.get("auth_controls", []),
+                    "is_authorized": boundary_info.get("is_authorized", False),
+                    "authorization_checks": boundary_info.get("authorization_checks", []),
+                    "is_tenant_scoped": boundary_info.get("is_tenant_scoped", False),
+                })
+        return results
+
+    def find_attack_chains(self, max_depth: int = 8) -> list[dict[str, Any]]:
+        """Identify multi-step cross-component attack chains from routes to sensitive operations."""
+        routes = self.find_nodes(kind=NodeKind.ROUTE)
+        target_sinks = {
+            nid for nid, node in self.nodes.items()
+            if node.kind in (
+                NodeKind.SENSITIVE_SINK,
+                NodeKind.QUERY,
+                NodeKind.PROCESS_EXEC,
+                NodeKind.EXTERNAL_REQUEST,
+                NodeKind.FILE_OPERATION,
+                NodeKind.DATA_ACCESS,
+            ) or (
+                node.kind in (NodeKind.FUNCTION, NodeKind.METHOD)
+                and any(k in node.label.lower() for k in [
+                    "dispatch", "fulfill", "refund", "transfer", "payout", "ship"
+                ])
+            )
+        }
+
+        chains: list[dict[str, Any]] = []
+        chain_idx = 0
+
+        for r in routes:
+            boundary_info = self.find_boundary_crossings(r.id)
+            is_authenticated = boundary_info.get("is_authenticated", False)
+            is_authorized = boundary_info.get("is_authorized", False)
+            is_tenant_scoped = boundary_info.get("is_tenant_scoped", False)
+
+            entry_points = [r.id]
+            for edge in self.out_edges.get(r.id, []):
+                if edge.kind in (EdgeKind.CALLS, EdgeKind.DEFINES, EdgeKind.REACHES):
+                    entry_points.append(edge.target_id)
+
+            for entry in entry_points:
+                queue: deque[tuple[str, list[str]]] = deque([(entry, [entry])])
+                visited_for_entry: set[str] = {entry}
+
+                while queue:
+                    curr, path = queue.popleft()
+                    if curr in target_sinks and len(path) > 1:
+                        sink_node = self.nodes[curr]
+                        chain_idx += 1
+                        chain_id = f"achain_{chain_idx:03d}"
+
+                        hops_data = []
+                        unresolved_on_path = False
+                        boundaries_crossed = []
+                        missing_controls = []
+
+                        if not is_authenticated:
+                            missing_controls.append("missing_authentication")
+                            boundaries_crossed.append("public_to_internal_unauthenticated")
+                        if not is_authorized:
+                            missing_controls.append("missing_role_authorization")
+                        if not is_tenant_scoped and sink_node.kind == NodeKind.QUERY:
+                            missing_controls.append("missing_tenant_isolation")
+
+                        for step_idx, nid in enumerate(path):
+                            step_node = self.nodes.get(nid)
+                            if not step_node:
+                                continue
+                            if step_node.provenance == RelationshipProvenance.UNRESOLVED:
+                                unresolved_on_path = True
+
+                            hops_data.append({
+                                "step": step_idx + 1,
+                                "node_id": nid,
+                                "label": step_node.label,
+                                "kind": step_node.kind.value,
+                                "file_path": step_node.file_path,
+                                "start_line": step_node.start_line,
+                                "end_line": step_node.end_line,
+                            })
+
+                        impact_map = {
+                            NodeKind.QUERY: "Arbitrary data extraction or cross-tenant record tampering",
+                            NodeKind.PROCESS_EXEC: "Arbitrary command execution in host environment",
+                            NodeKind.EXTERNAL_REQUEST: "Server-side request forgery (SSRF) against internal services",
+                            NodeKind.FILE_OPERATION: "Unauthorized file system manipulation or sensitive data exposure",
+                            NodeKind.SENSITIVE_SINK: "Unauthorized execution of sensitive system action",
+                        }
+                        impact_str = impact_map.get(sink_node.kind, "Unauthorized access to sensitive functionality")
+
+                        chains.append({
+                            "chain_id": chain_id,
+                            "entry_route": r.properties.get("route_path", r.label),
+                            "entry_route_id": r.id,
+                            "target_sink_id": curr,
+                            "target_sink_kind": sink_node.kind.value,
+                            "target_sink_expression": sink_node.properties.get("sink_expression", sink_node.label),
+                            "target_file": sink_node.file_path,
+                            "target_line": sink_node.start_line,
+                            "is_authenticated": is_authenticated,
+                            "is_authorized": is_authorized,
+                            "is_tenant_scoped": is_tenant_scoped,
+                            "missing_controls": missing_controls,
+                            "boundaries_crossed": boundaries_crossed,
+                            "hops": hops_data,
+                            "hop_count": len(path) - 1,
+                            "has_unresolved_call": unresolved_on_path,
+                            "potential_impact": impact_str,
+                            "is_high_risk": (not is_authenticated or not is_authorized) and len(missing_controls) > 0,
+                        })
+                        continue
+
+                    if len(path) >= max_depth:
+                        continue
+
+                    for edge in self.out_edges.get(curr, []):
+                        if edge.target_id not in visited_for_entry:
+                            visited_for_entry.add(edge.target_id)
+                            queue.append((edge.target_id, path + [edge.target_id]))
+
+        return chains

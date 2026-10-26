@@ -66,6 +66,8 @@ class VulnerabilityCategory(str, Enum):
     SENSITIVE_DATA_EXPOSURE = "sensitive_data_exposure"
     BUSINESS_LOGIC_FLAW = "business_logic_flaw"
     INSECURE_DIRECT_FILE_ACCESS = "insecure_direct_file_access"
+    CHAINED_VULNERABILITY = "chained_vulnerability"
+    STATE_MACHINE_BYPASS = "state_machine_bypass"
     GENERIC = "generic"
 
 
@@ -95,6 +97,50 @@ class DataFlowStep(BaseModel):
     location: SourceLocation
     description: str
     transformation: str | None = None
+
+
+class AttackChainStep(BaseModel):
+    """A single link or progression step in an interprocedural attack chain."""
+    step_number: int
+    location: SourceLocation
+    operation_type: str  # entry_point, dispatch, transformation, boundary_crossing, sensitive_sink, state_mutation
+    description: str
+    actor_capability: str = "unauthenticated_attacker"
+    trust_boundary_crossed: str | None = None
+    preconditions: list[str] = Field(default_factory=list)
+    supporting_evidence: list[CodeEvidence] = Field(default_factory=list)
+    counterevidence: list[str] = Field(default_factory=list)
+    unresolved_links: list[str] = Field(default_factory=list)
+
+
+class AttackChain(BaseModel):
+    """Multi-step cross-component vulnerability attack chain representation."""
+    chain_id: str
+    title: str
+    starting_point: str
+    target_operation: str
+    attacker_capability: str = "unauthenticated_attacker"
+    preconditions: list[str] = Field(default_factory=list)
+    steps: list[AttackChainStep] = Field(default_factory=list)
+    trust_boundaries: list[str] = Field(default_factory=list)
+    potential_impact: str = ""
+    validation_requirements: list[str] = Field(default_factory=list)
+    is_exploitable_estimate: bool = True
+    unresolved_factors: list[str] = Field(default_factory=list)
+
+
+class InvestigationMemoryRecord(BaseModel):
+    """Persistent, version-aware knowledge and hypotheses recorded for a repository."""
+    repo_path: str
+    source_revision: str
+    architecture_summary: dict[str, Any] = Field(default_factory=dict)
+    entry_points: list[dict[str, Any]] = Field(default_factory=list)
+    security_boundaries: list[dict[str, Any]] = Field(default_factory=list)
+    explored_paths: list[dict[str, Any]] = Field(default_factory=list)
+    hypotheses: list[dict[str, Any]] = Field(default_factory=list)
+    counterevidence_catalog: list[dict[str, Any]] = Field(default_factory=list)
+    analysis_gaps: list[dict[str, Any]] = Field(default_factory=list)
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class ValidationResult(BaseModel):
@@ -205,6 +251,7 @@ class Finding(BaseModel):
     counterevidence: list[str] = Field(default_factory=list)
     supporting_evidence: list[str] = Field(default_factory=list)
     attack_chain: list[str] = Field(default_factory=list)
+    structured_attack_chain: AttackChain | None = None
     hypothesis: InvestigationHypothesis | None = None
     uncertainty: str = ""
     validation_status: ValidationStatus = ValidationStatus.CANDIDATE
