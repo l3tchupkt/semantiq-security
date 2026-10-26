@@ -44,14 +44,16 @@ class VulnerabilityDiscoveryEngine:
         config: ScanConfig | None = None,
         ai_provider: BaseAIProvider | None = None,
         event_bus: EventBus | None = None,
+        intelligence: RepositoryIntelligence | None = None,
+        orchestrator: InvestigationOrchestrator | None = None,
     ) -> None:
         self.repository_root = repository_root
         self.config = config or ScanConfig()
         self.ai_provider = ai_provider
         self.event_bus = event_bus or EventBus()
         self.context_collector = ContextCollector(repository_root)
-        self.intelligence = RepositoryIntelligence(repository_root)
-        self.orchestrator = InvestigationOrchestrator(
+        self.intelligence = intelligence or RepositoryIntelligence(repository_root)
+        self.orchestrator = orchestrator or InvestigationOrchestrator(
             repository_root=self.repository_root,
             intelligence=self.intelligence,
             config=self.config,

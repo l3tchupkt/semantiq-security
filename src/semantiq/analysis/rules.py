@@ -116,6 +116,13 @@ CORE_SANITIZERS: dict[str, SanitizerModel] = {
         transformation="Backslash-escaping regex metacharacters",
         context="regex",
     ),
+    # SSRF URL sanitizer
+    "validate_url": SanitizerModel(
+        name="validate_url",
+        neutralized_categories=frozenset({VulnerabilityCategory.SSRF}),
+        transformation="Validates URL destination against private network and protocol allowlist",
+        context="url",
+    ),
 }
 
 
@@ -393,6 +400,21 @@ RULE_DEFINITIONS: list[VulnerabilityRule] = [
         explanation_template="Sensitive user data or credential fields serialized directly into HTTP response",
         remediation_advice="Use Data Transfer Objects (DTOs) or field exclude schemas to omit passwords, tokens, and secrets from responses.",
         known_limitations=["Testing fixtures."],
+    ),
+    VulnerabilityRule(
+        rule_id="SQ-PY-018",
+        category=VulnerabilityCategory.BUSINESS_LOGIC_FLAW,
+        title="Business Logic Flaw: Missing State Invariant or Transition Validation",
+        severity=SeverityLevel.HIGH,
+        confidence=ConfidenceLevel.MEDIUM,
+        cwe_ids=["CWE-840", "CWE-362"],
+        sinks={"order.fulfill", "order.status =", "payment.complete", "transition_to"},
+        valid_sanitizers=set(),
+        contextual_constraints=["Critical state transition executed without validating source state or transaction status"],
+        prerequisites=["Client can trigger transition action out of order"],
+        explanation_template="State-altering workflow transition executed without verifying precondition invariants or verification tokens",
+        remediation_advice="Enforce state machine invariants: verify current_state == EXPECTED_STATE before transitioning.",
+        known_limitations=["Custom finite state machine frameworks."],
     ),
 ]
 

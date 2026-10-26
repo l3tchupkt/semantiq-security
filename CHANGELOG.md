@@ -26,3 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository intelligence upgrade with sha256 content caching, HTTP auth boundary mapping, multi-tenant indicators, and explicit unresolved call/dynamic dispatch tracking (`UnresolvedCall`).
 - Actionable coverage reporting (`CoverageReport`) with gap notes, skipped files, unparsed files, and unsupported language tracking.
 - Bounded investigation budgets (`InvestigationBudget`) with call depth, files, hypotheses, model requests, and execution timeouts.
+- Business Logic Flaw & State Transition Invariant rule: `SQ-PY-018` for state machine preconditions and fulfillment checks.
+- Comprehensive benchmark audit with explicit instance-level ground truth matching, disclosed coverage breakdown (Semantic AST vs Polyglot scan), memory profiling, and duplicate tracking.
+- Multi-tier SaaS application evaluation suite (`multitenant_saas_app` and `multitenant_saas_safe`) testing multi-hop cross-component chains.
+- Multi-factor explainable prioritization scoring combining impact, reachability, attacker control, and uncertainty penalties.
+- Scalability and resilience test suite covering circular imports, deep call graphs, recursive calls, and malformed syntax recovery.

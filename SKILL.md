@@ -68,18 +68,20 @@ When introducing a new vulnerability detector:
    - Add dedicated unit tests in `tests/unit/test_python_ast.py` or `tests/unit/test_investigation_orchestrator.py`.
 
 ### Step 4: Architectural Investigation & Orchestration Pattern
-When investigating complex vulnerabilities (BOLA/IDOR, Missing Auth, Data Leakage):
+When investigating complex vulnerabilities (BOLA/IDOR, Missing Auth, Data Leakage, Logic Flaws):
 1. **Formulate Concrete Hypothesis**:
    - Identify entry point, parameters, sensitive sink, and required preconditions.
-2. **Trace Call Graph Backwards**:
-   - Trace from internal sink to web route boundary or entry point.
+2. **Trace Call Graph Across Components**:
+   - Trace backward from internal sinks across services and DAOs to route boundaries.
+   - Detect multi-hop call chains (Route -> Service -> DAO -> Sink).
 3. **Inspect Surrounding Defenses & Counterevidence**:
    - Look for route decorators (`@login_required`, `@admin_required`, `@roles_accepted`).
-   - Check inline guards (session lookups, ownership comparison clauses in queries).
+   - Check inline guards (session lookups, ownership comparison clauses in queries, tenant filters).
 4. **Flag Dynamic Dispatch & Unresolved Calls**:
    - Mark findings affected by unresolved dispatch as `INCONCLUSIVE` rather than assuming safety.
-5. **Enforce Investigation Budgets**:
+5. **Enforce Investigation Budgets & Explainable Prioritization**:
    - Bound call depth, inspected files, hypotheses count, and timeout limits.
+   - Compute multi-factor prioritization scores (Impact + Reachability + Control + Uncertainty).
 
 ### Step 5: AI Provider Adapter & Anti-Hallucination Pattern
 When modifying or adding provider adapters:

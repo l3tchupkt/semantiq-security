@@ -194,3 +194,9 @@ semantiq-security/
    - Never claim parity with external systems (such as Codex Security) without independent, reproducible benchmarks run under identical conditions.
 3. **No Metric Fabrication**:
    - Never hardcode or fabricate benchmark metrics, precision, recall, or test outcomes. All reported metrics must derive directly from executed benchmark runs.
+4. **Explicit Ground Truth Manifests**:
+   - Benchmarks must define instance-level manifests (file, category, rule ID, sink line).
+   - Distinguish instance-level recall from category coverage. Disclose semantic AST parser coverage versus polyglot repository scan coverage.
+   - Any ground truth in unparsed/skipped files must be strictly counted as False Negatives, or the benchmark run flagged as INCOMPLETE.
+5. **Multi-Factor Explainable Prioritization**:
+   - Findings must provide explainable composite prioritization scores combining Impact, Reachability, Attacker Control, and Uncertainty penalties.
