@@ -7,12 +7,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from semantiq.analysis.spg_dataflow import SPGDataFlowAnalyzer
 from semantiq.config import SemantiqConfig
 from semantiq.discovery.engine import VulnerabilityDiscoveryEngine
 from semantiq.events import EventBus, EventHandler, EventType, ScanEvent
 from semantiq.exceptions import TargetNotFoundError
+from semantiq.graph.builder import GraphBuilder
+from semantiq.graph.graph import SemanticProgramGraph
+from semantiq.graph.models import NodeKind
 from semantiq.models import (
     Finding,
+    InvestigationHypothesis,
     PatchProposal,
     PatchVerificationResult,
     RepositoryInspection,
@@ -357,3 +362,216 @@ class Semantiq:
             return export_sarif(scan_result)
         else:
             raise ValueError(f"Unsupported export format: {format}")
+
+    # Phase 2 & 7: Semantic Program Graph (SPG) and Memory Primitives
+    async def get_semantic_graph(self, target: str | Path) -> SemanticProgramGraph:
+        """Retrieve or build the Semantic Program Graph for a repository."""
+        repo_path = Path(target).expanduser().resolve()
+        insp = await self.inspect_repository(repo_path)
+        rev = insp.git_revision or ""
+        cached = self.storage.load_graph(str(repo_path), rev)
+        if cached:
+            return cached
+
+        builder = GraphBuilder(repo_path, source_revision=rev)
+        result = builder.build(insp.in_scope_files)
+        self.storage.save_graph(str(repo_path), rev, result.graph)
+        return result.graph
+
+    async def query_symbols(
+        self,
+        target: str | Path,
+        query: str | None = None,
+        kind: str | None = None,
+        file_path: str | None = None,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        """Query symbols in the Semantic Program Graph."""
+        graph = await self.get_semantic_graph(target)
+        k_enum = NodeKind(kind) if kind else None
+        nodes = graph.find_nodes(kind=k_enum, file_path=file_path)
+
+        if query:
+            q_lower = query.lower()
+            nodes = [n for n in nodes if q_lower in n.label.lower() or q_lower in n.id.lower()]
+
+        results = []
+        for n in nodes[:limit]:
+            results.append({
+                "id": n.id,
+                "kind": n.kind.value,
+                "label": n.label,
+                "file_path": n.file_path,
+                "start_line": n.start_line,
+                "end_line": n.end_line,
+                "provenance": n.provenance.value,
+                "properties": n.properties,
+            })
+        return results
+
+    async def query_callers_callees(
+        self,
+        target: str | Path,
+        symbol_name: str,
+        direction: str = "both",
+    ) -> dict[str, Any]:
+        """Lookup callers and callees for a target symbol."""
+        graph = await self.get_semantic_graph(target)
+        matching = [n for n in graph.nodes.values() if n.label == symbol_name or n.label.endswith(f".{symbol_name}")]
+        if not matching:
+            return {"error": f"Symbol '{symbol_name}' not found in semantic graph", "callers": [], "callees": []}
+
+        symbol_node = matching[0]
+        callers = [c.model_dump() for c in graph.get_callers(symbol_node.id)] if direction in ("callers", "both") else []
+        callees = [c.model_dump() for c in graph.get_callees(symbol_node.id)] if direction in ("callees", "both") else []
+
+        return {
+            "symbol": symbol_node.model_dump(),
+            "callers": callers,
+            "callees": callees,
+        }
+
+    async def query_neighborhood(
+        self,
+        target: str | Path,
+        node_id: str,
+        radius: int = 1,
+    ) -> dict[str, Any]:
+        """Extract a bounded subgraph around a node for agent reasoning."""
+        graph = await self.get_semantic_graph(target)
+        clamped_radius = max(1, min(3, radius))
+        return graph.get_neighborhood(node_id, radius=clamped_radius)
+
+    async def query_dataflow_paths(
+        self,
+        target: str | Path,
+        source_symbol: str | None = None,
+        sink_category: str | None = None,
+        max_depth: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Trace cross-file dataflow paths from route parameters to sensitive sinks."""
+        graph = await self.get_semantic_graph(target)
+        analyzer = SPGDataFlowAnalyzer(graph, max_depth=max_depth)
+        traces = analyzer.trace_all_source_to_sinks()
+
+        results = []
+        for t in traces:
+            if source_symbol and source_symbol.lower() not in t.source_node.label.lower():
+                continue
+            if sink_category and sink_category.lower() not in t.category.value.lower():
+                continue
+
+            results.append({
+                "source": t.source_node.model_dump(),
+                "sink": t.sink_node.model_dump(),
+                "category": t.category.value,
+                "is_sanitized": t.is_sanitized,
+                "sanitizer": t.sanitizer_name,
+                "is_authorized": t.is_authorized,
+                "is_tenant_scoped": t.is_tenant_scoped,
+                "confidence": t.confidence,
+                "steps": [s.model_dump() for s in t.steps],
+                "path_length": len(t.path_nodes),
+            })
+        return results
+
+    async def query_route_reachability(
+        self,
+        target: str | Path,
+        route_path: str | None = None,
+        sink_kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Identify reachability chains from HTTP routes to sensitive operations."""
+        graph = await self.get_semantic_graph(target)
+        k_enum = NodeKind(sink_kind) if sink_kind else None
+        return graph.find_route_to_sink_paths(route_id=route_path, sink_kind=k_enum)
+
+    async def query_authorization_path(
+        self,
+        target: str | Path,
+        route_path: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Inspect route authentication decorators, authorization checks, and sensitive queries."""
+        graph = await self.get_semantic_graph(target)
+        routes = graph.find_nodes(kind=NodeKind.ROUTE)
+        if route_path:
+            routes = [r for r in routes if route_path in r.properties.get("route_path", r.label)]
+
+        results = []
+        for r in routes:
+            boundary_info = graph.find_boundary_crossings(r.id)
+            results.append(boundary_info)
+        return results
+
+    async def query_tenant_isolation(
+        self,
+        target: str | Path,
+        with_ownership_check: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        """Inspect resource access paths with and without tenant ownership enforcement."""
+        graph = await self.get_semantic_graph(target)
+        return graph.find_resource_access_paths(with_ownership_check=with_ownership_check)
+
+    async def get_analysis_gaps(self, target: str | Path) -> dict[str, Any]:
+        """Report unresolved dynamic calls, unparsed files, and unsupported syntax."""
+        repo_path = Path(target).expanduser().resolve()
+        insp = await self.inspect_repository(repo_path)
+        graph = await self.get_semantic_graph(repo_path)
+        unresolved_regions = graph.find_unresolved_regions()
+
+        gap_notes = list(insp.coverage.gap_notes) if insp.coverage else []
+        failed_files = list(insp.coverage.failed_parsing_files) if insp.coverage else []
+
+        return {
+            "unresolved_dynamic_calls": unresolved_regions,
+            "failed_parsing_files": failed_files,
+            "gap_notes": gap_notes,
+            "total_unresolved": len(unresolved_regions),
+        }
+
+    async def record_hypothesis(
+        self,
+        target: str | Path,
+        statement: str,
+        target_symbol: str,
+        entry_point: str,
+        rule_id: str,
+        disposition: str = "open",
+    ) -> dict[str, Any]:
+        """Record structured security hypothesis in persistent memory."""
+        repo_path = Path(target).expanduser().resolve()
+        hyp_id = f"hyp_{uuid.uuid4().hex[:8]}"
+        hypothesis = InvestigationHypothesis(
+            hypothesis_id=hyp_id,
+            rule_id=rule_id,
+            target_symbol=target_symbol,
+            entry_point=entry_point,
+            sensitive_operation="",
+            statement=statement,
+            disposition=disposition,
+        )
+        self.storage.save_hypothesis(hypothesis, scan_id="manual_investigation", repo_path=str(repo_path))
+        return hypothesis.model_dump()
+
+    async def get_evidence(self, finding_id: str) -> dict[str, Any]:
+        """Retrieve verifiable evidence, snippets, citations, and dataflow steps for a finding."""
+        finding = self.storage.get_finding_by_id(finding_id)
+        if not finding:
+            raise ValueError(f"Finding not found: {finding_id}")
+
+        return {
+            "finding_id": finding.finding_id,
+            "rule_id": finding.rule_id,
+            "title": finding.title,
+            "severity": finding.severity.value,
+            "file_path": finding.file_path,
+            "start_line": finding.start_line,
+            "end_line": finding.end_line,
+            "code_evidence": [e.model_dump() for e in finding.code_evidence],
+            "data_flow": [s.model_dump() for s in finding.data_flow],
+            "supporting_evidence": finding.supporting_evidence,
+            "counterevidence": finding.counterevidence,
+            "hypothesis": finding.hypothesis.model_dump() if finding.hypothesis else None,
+            "uncertainty": finding.uncertainty,
+            "validation_status": finding.validation_status.value,
+        }

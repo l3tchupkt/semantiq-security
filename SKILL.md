@@ -1,158 +1,139 @@
 ---
-name: semantiq-security-engineering
-description: Repeatable engineering and security research workflow for developing, testing, and hardening the Semantiq Security SDK, CLI, and MCP server.
+name: semantiq-security-investigation
+description: Evidence-driven agent operating procedure for repository security analysis, semantic program graph exploration, multi-hop vulnerability investigation, and verified remediation using Semantiq Security.
 ---
 
-# Semantiq Security Engineering Skill Workflow
+# Semantiq Security Investigation & Engineering Skill
 
 > [!IMPORTANT]
-> **Prerequisite**: Always read and adhere to [`AGENTS.md`](file:///e:/Semantiq-Security/semantiq-security/AGENTS.md) before performing any changes to the codebase. The project version must remain `0.1.0`.
+> **Prerequisites & Constraints**:
+> - Adhere to [`AGENTS.md`](file:///e:/Semantiq-Security/semantiq-security/AGENTS.md) at all times.
+> - Package version must remain locked at `0.1.0`.
+> - Keep the repository strictly private. Do not publish packages or create release tags.
+> - Never execute target application code without isolated sandboxing.
+> - Never fabricate benchmark metrics or claim parity with external systems (Codex Security) without reproducible evidence.
 
-This skill provides the standard, end-to-end operational procedure for working on the **Semantiq Security** platform (`semantiq`).
-
----
-
-## 1. Skill Invocations & Scenarios
-
-Use this skill whenever:
-- Adding or enhancing vulnerability detection rules in AST or polyglot engines.
-- Improving path validation, sandbox isolation, or trust boundary defenses.
-- Implementing or extending AI provider adapters (OpenAI, Anthropic, Ollama, Mock).
-- Adding or refining CLI commands or MCP tools.
-- Fixing defects, improving type safety, or adding regression test fixtures.
-- Generating and verifying automated unified diff remediation patches.
+This skill provides the authoritative operational guide for autonomous agents conducting security assessments using the **Semantiq Security** SDK, CLI, and Model Context Protocol (MCP) server.
 
 ---
 
-## 2. Step-by-Step Engineering Lifecycle
+## 1. Agent Security Investigation Methodology
 
-### Step 1: Pre-Execution Environment Baseline
-Before touching any files, verify the local environment:
-```powershell
-# Verify git status and branch
-git status
-git branch --show-current
-
-# Run baseline tests
-pytest -v
-
-# Verify code formatting and types
-python -m ruff check .
-python -m mypy src/semantiq
+```mermaid
+graph TD
+    Scope[1. Establish Scope & Inventory] --> TM[2. Threat Model & Boundaries]
+    TM --> Graph[3. Build Semantic Program Graph]
+    Graph --> Trace[4. Trace Interprocedural Paths]
+    Trace --> Hypo[5. Formulate Bounded Hypotheses]
+    Hypo --> Counter[6. Search for Counterevidence & Guards]
+    Counter --> Verify[7. Local Source Citation Verification]
+    Verify --> Validate[8. Target Validation & Remediation]
 ```
 
-### Step 2: Architecture Discovery & Boundary Checks
-1. Identify which layer the task affects:
-   - **Scanning & Discovery**: `src/semantiq/analysis/`, `src/semantiq/discovery/`
-   - **Repository & Filesystem**: `src/semantiq/repository/`
-   - **Execution & Sandboxing**: `src/semantiq/sandbox/`, `src/semantiq/validation/`
-   - **Remediation & Storage**: `src/semantiq/remediation/`, `src/semantiq/storage/`
-   - **Interfaces**: `src/semantiq/cli.py`, `src/semantiq/integrations/mcp/`
-2. **Never violate trust boundaries**:
-   - Do not invoke target code in static analysis.
-   - Always route filesystem operations through `resolve_safe_path()`.
+### Phase 1: Establish Assessment Scope
+Before inspecting source code, identify repository boundaries, language distribution, and file inventory:
+- **MCP Tool**: `semantiq_inspect_repository(path=".")`
+- **Actions**:
+  1. Record total files on disk vs in-scope files.
+  2. Identify supported languages (Python, JavaScript, TypeScript) and unsupported extensions.
+  3. Inspect Git revision and dirty state.
+  4. Note any ignored or excluded directories (`.git`, `node_modules`, `venv`, `build`).
 
-### Step 3: Vulnerability Detector Development Pattern
-When introducing a new vulnerability detector:
-1. **Define Rule ID & Metadata**: Follow `SQ-<LANG>-<NNN>` format (e.g. `SQ-PY-001`, `SQ-PY-013`).
-2. **Implement AST / Pattern Visitor**:
-   - Traverse the syntax tree to inspect Call nodes, argument vectors, and keyword arguments.
-   - Differentiate static literals from dynamic formatting, f-strings, and tainted variables.
-3. **Capture Accurate Evidence & Snippets**:
-   - Extract the exact start line and end line.
-   - Use `extract_context_snippet()` to capture surrounding code context for verification.
-4. **Build Dual Labeled Fixtures**:
-   - Add a vulnerable test case in `tests/fixtures/vulnerable_app/`.
-   - Add an equivalent safe/remediated test case in `tests/fixtures/safe_app/` to prevent false positives.
-5. **Add Regression Tests**:
-   - Add dedicated unit tests in `tests/unit/test_python_ast.py` or `tests/unit/test_investigation_orchestrator.py`.
+### Phase 2: Query Architecture & Threat Model
+Identify entry points, trust boundaries, and protected assets:
+- **MCP Tool**: `semantiq_build_threat_model(path=".")`
+- **Actions**:
+  1. Map all external HTTP routes, request handlers, and CLI entry points.
+  2. Enumerate trust boundaries separating unauthenticated callers from internal services.
+  3. Catalog sensitive database models, file storage, and external network sinks.
 
-### Step 4: Architectural Investigation & Orchestration Pattern
-When investigating complex vulnerabilities (BOLA/IDOR, Missing Auth, Data Leakage, Logic Flaws):
-1. **Formulate Concrete Hypothesis**:
-   - Identify entry point, parameters, sensitive sink, and required preconditions.
-2. **Trace Call Graph Across Components**:
-   - Trace backward from internal sinks across services and DAOs to route boundaries.
-   - Detect multi-hop call chains (Route -> Service -> DAO -> Sink).
-3. **Inspect Surrounding Defenses & Counterevidence**:
-   - Look for route decorators (`@login_required`, `@admin_required`, `@roles_accepted`).
-   - Check inline guards (session lookups, ownership comparison clauses in queries, tenant filters).
-4. **Flag Dynamic Dispatch & Unresolved Calls**:
-   - Mark findings affected by unresolved dispatch as `INCONCLUSIVE` rather than assuming safety.
-5. **Enforce Investigation Budgets & Explainable Prioritization**:
-   - Bound call depth, inspected files, hypotheses count, and timeout limits.
-   - Compute multi-factor prioritization scores (Impact + Reachability + Control + Uncertainty).
+### Phase 3: Semantic Program Graph (SPG) Exploration
+Query the versioned, typed Semantic Program Graph to understand code relationships:
+- **MCP Tools**:
+  - `semantiq_query_symbols(path, query, kind, file_path)`: Inspect functions, classes, and routes.
+  - `semantiq_query_callers_callees(path, symbol_name, direction="both")`: Examine inbound and outbound call relationships.
+  - `semantiq_query_neighborhood(path, node_id, radius=1)`: Extract bounded subgraphs for local reasoning without reading entire repositories.
 
-### Step 5: AI Provider Adapter & Anti-Hallucination Pattern
-When modifying or adding provider adapters:
-1. Implement the abstract methods in `BaseAIProvider`:
-   - `analyze_code(snippet, context)`
-   - `propose_remediation(finding, code_context)`
-2. Ensure network calls use async timeouts and clean error handling.
-3. Always verify model citations using `verify_finding_citations()`:
-   ```python
-   is_valid, reason = verify_finding_citations(finding, repo_root)
-   if not is_valid:
-       # Reject or mark unverified
-   ```
-4. Update `MockProvider` to reflect deterministic test expectations.
+### Phase 4: Interprocedural Data-Flow & Reachability Tracing
+Trace attacker-controlled parameters from routes to sensitive operations across helper services:
+- **MCP Tools**:
+  - `semantiq_query_route_reachability(path, route_path, sink_kind)`: Trace call chains from routes to sensitive sinks (`query`, `process_exec`, `external_request`, `file_operation`).
+  - `semantiq_query_dataflow_path(path, source_symbol, sink_category, max_depth=10)`: Trace end-to-end dataflow, checking for parameter propagation and context-sensitive sanitizers.
 
-### Step 6: Safe Remediation & Patch Verification
-When implementing automated remediation:
-1. Generate unified diffs with exact line offsets.
-2. In-memory patch verification:
-   - Apply patch to an in-memory buffer without modifying disk.
-   - Re-parse the patched content using `ast.parse()` to verify syntax validity.
-   - Re-run the AST detector to confirm that the vulnerable pattern is eliminated.
+### Phase 5: Authorization & Tenant Boundary Inspection
+Distinguish authentication from object authorization, and trace tenant scoping invariants:
+- **MCP Tools**:
+  - `semantiq_query_authorization_path(path, route_path)`: Inspect route authentication decorators (`@login_required`), authorization checks (`@admin_required`, `@roles_accepted`), and database queries executed.
+  - `semantiq_query_tenant_isolation(path, with_ownership_check)`: Identify database access paths lacking tenant ownership comparison clauses (`WHERE tenant_id = ?`).
 
-### Step 7: Full Verification Suite
-Execute the full testing and quality pipeline:
-```powershell
-# 1. Linting
-python -m ruff check .
+### Phase 6: Formulate & Challenge Hypotheses
+Develop explicit vulnerability hypotheses with required preconditions and counterevidence:
+- **MCP Tool**: `semantiq_record_hypothesis(path, statement, target_symbol, entry_point, rule_id, disposition)`
+- **Rule of Evidence**:
+  - Do not assert missing authorization merely because a local function lacks an inline guard; check the route decorator and middleware stack.
+  - Look for sanitizers: `validate_url()` neutralizes SSRF; `int()` neutralizes SQL injection; `escape()` neutralizes XSS.
+  - Check state machine invariants: ensure fulfilling an order requires prior payment verification (`SQ-PY-018`).
 
-# 2. Strict Type Check
-python -m mypy src/semantiq
+### Phase 7: Read & Locally Verify Source Citations
+Verify that all model-generated code claims correspond to real lines on disk:
+- **MCP Tool**: `semantiq_get_evidence(finding_id)`
+- **Actions**:
+  1. Verify file paths exist and lines are within file bounds.
+  2. Compare code snippet text with actual disk contents.
+  3. Reject or mark unvalidated any hypothesis citing non-existent lines or hallucinated helper functions.
 
-# 3. Unit & Integration Tests
-pytest -v
+### Phase 8: Analysis Gap Accounting & Uncertainty Reporting
+Inspect dynamic dispatches, unparsed files, and foreign libraries:
+- **MCP Tool**: `semantiq_get_analysis_gaps(path)`
+- **Actions**:
+  - Report dynamic dispatches (`getattr()`, `eval()`) as `INCONCLUSIVE` rather than assuming safety.
+  - Report unparsed or skipped files as partial coverage in the evaluation summary.
 
-# 4. Performance & Accuracy Benchmark
-python benchmarks/run_benchmark.py
+### Phase 9: Controlled Validation & Remediation
+Validate findings through static dataflow or targeted regression tests:
+- **MCP Tools**:
+  - `semantiq_validate_finding(finding_id, mode="static")`
+  - `semantiq_propose_patch(finding_id)`
+  - `semantiq_verify_patch(finding_id)`: Applies patch to an in-memory temporary AST buffer, verifying syntax validity and re-scanning to ensure vulnerability elimination.
 
-# 5. Build Packaging Validation
-python -m build
-python -m twine check dist/*
-```
+---
 
-### Step 8: Git Staging, Review & Push
-1. Inspect unstaged and staged changes:
-   ```powershell
-   git status
-   git diff
-   ```
-2. Verify that NO `.env`, API keys, temporary SQLite files, or cache directories are staged.
-3. Commit with conventional commit message:
-   ```powershell
-   git add <modified-files>
-   git commit -m "feat(module): descriptive action"
-   ```
-4. Push to remote:
-   ```powershell
-   git push origin main
-   ```
+## 2. Complete MCP Tool Suite Reference
+
+| Tool Name | Purpose | Primary Inputs |
+| :--- | :--- | :--- |
+| `semantiq_inspect_repository` | Inventory files, detect languages, Git revision | `path` |
+| `semantiq_build_threat_model` | Extract entry points, trust boundaries, sinks | `path` |
+| `semantiq_scan_repository` | Deterministic security scan with category focus | `target`, `focus`, `mode` |
+| `semantiq_scan_diff` | Security review focused on Git commit diff | `target`, `base`, `head` |
+| `semantiq_get_findings` | Retrieve findings recorded for a scan ID | `scan_id` |
+| `semantiq_investigate_finding` | Deep local context investigation on finding | `finding_id` |
+| `semantiq_validate_finding` | Validate finding (static, test_based, dynamic) | `finding_id`, `mode` |
+| `semantiq_propose_patch` | Generate security invariant unified diff patch | `finding_id` |
+| `semantiq_verify_patch` | Test patch in isolated in-memory AST copy | `finding_id` |
+| `semantiq_export_report` | Export findings (JSON, Markdown, SARIF 2.1.0) | `scan_id`, `format` |
+| `semantiq_query_symbols` | Search symbols in Semantic Program Graph | `path`, `query`, `kind`, `limit` |
+| `semantiq_query_callers_callees` | Lookup inbound/outbound calls for symbol | `path`, `symbol_name`, `direction` |
+| `semantiq_query_neighborhood` | Extract bounded subgraph around node | `path`, `node_id`, `radius` |
+| `semantiq_query_dataflow_path` | Trace route-to-sink dataflow paths | `path`, `source_symbol`, `sink_category` |
+| `semantiq_query_route_reachability` | Trace route call chains to dangerous operations | `path`, `route_path`, `sink_kind` |
+| `semantiq_query_authorization_path` | Inspect route auth boundaries and queries | `path`, `route_path` |
+| `semantiq_query_tenant_isolation` | Inspect database paths for tenant scoping | `path`, `with_ownership_check` |
+| `semantiq_get_analysis_gaps` | Report dynamic dispatch and unparsed files | `path` |
+| `semantiq_record_hypothesis` | Record hypothesis in persistent memory | `path`, `statement`, `rule_id` |
+| `semantiq_get_evidence` | Retrieve verified code citations and dataflow | `finding_id` |
 
 ---
 
 ## 3. Engineering Quality Checklist
 
-Before finalizing any task, verify:
+Before finalizing any task or committing changes:
 - [ ] Version declaration across all files is strictly `0.1.0`.
 - [ ] No target repository code is executed without explicit opt-in.
-- [ ] Path resolution strictly prevents traversal and NTFS stream bypasses.
+- [ ] Path resolution strictly prevents traversal and NTFS stream bypasses (`resolve_safe_path`).
 - [ ] No live credentials exist in fixtures, code, or logs.
-- [ ] All new functions and public APIs are fully typed.
+- [ ] All new functions and public APIs are fully typed and pass `mypy`.
 - [ ] `pytest -v` passes with 0 failures.
 - [ ] `ruff check .` reports 0 errors.
-- [ ] `mypy src/semantiq` reports 0 issues.
+- [ ] Benchmark runner (`python benchmarks/run_benchmark.py`) passes without fabricated parity claims.
 - [ ] Remote `origin/main` is up-to-date and clean.

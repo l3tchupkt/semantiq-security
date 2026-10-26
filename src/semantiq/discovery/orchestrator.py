@@ -15,6 +15,8 @@ from pathlib import Path
 from semantiq.analysis.rules import GLOBAL_RULE_REGISTRY
 from semantiq.config import ScanConfig
 from semantiq.events import EventBus
+from semantiq.graph.builder import GraphBuilder
+from semantiq.graph.graph import SemanticProgramGraph
 from semantiq.models import (
     CodeEvidence,
     ConfidenceLevel,
@@ -54,6 +56,7 @@ class InvestigationOrchestrator:
         ai_provider: BaseAIProvider | None = None,
         event_bus: EventBus | None = None,
         budget: InvestigationBudget | None = None,
+        graph: SemanticProgramGraph | None = None,
     ) -> None:
         self.repository_root = repository_root
         self.intelligence = intelligence
@@ -61,6 +64,7 @@ class InvestigationOrchestrator:
         self.ai_provider = ai_provider
         self.event_bus = event_bus or EventBus()
         self.budget = budget or InvestigationBudget()
+        self.graph = graph
 
     def investigate(
         self,
@@ -71,6 +75,11 @@ class InvestigationOrchestrator:
         """Execute orchestrated multi-phase investigation over candidates and architectural facts."""
         t_start = time.perf_counter()
         investigated: list[Finding] = []
+
+        if self.graph is None:
+            builder = GraphBuilder(self.repository_root)
+            build_res = builder.build(in_scope_files)
+            self.graph = build_res.graph
 
         # Phase 1: Architectural Vulnerability Discovery (BOLA/IDOR, Missing Auth, Cross-Tenant, Logic Flaws)
         arch_findings = self._discover_architectural_vulnerabilities(scan_id)

@@ -1,4 +1,4 @@
-"""SQLite persistence layer for scans, findings, threat models, and patches."""
+"""SQLite persistence layer for scans, findings, threat models, patches, and semantic graphs."""
 
 from __future__ import annotations
 
@@ -10,12 +10,21 @@ from pathlib import Path
 from typing import Any
 
 from semantiq.exceptions import StorageError
+from semantiq.graph.graph import SemanticProgramGraph
+from semantiq.graph.models import (
+    EdgeKind,
+    GraphEdge,
+    GraphNode,
+    NodeKind,
+    RelationshipProvenance,
+)
 from semantiq.models import (
     Finding,
+    InvestigationHypothesis,
     ScanResult,
 )
 
-SCHEMA_V1 = """
+SCHEMA_V2 = """
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY
 );
@@ -74,6 +83,56 @@ CREATE TABLE IF NOT EXISTS patches (
     full_json TEXT NOT NULL,
     FOREIGN KEY(finding_id) REFERENCES findings(finding_id) ON DELETE CASCADE
 );
+
+-- Phase 6: Persistent Repository Memory and Semantic Program Graph
+CREATE TABLE IF NOT EXISTS repository_memory (
+    repo_path TEXT NOT NULL,
+    source_revision TEXT NOT NULL,
+    architecture_summary_json TEXT NOT NULL,
+    entry_points_json TEXT NOT NULL,
+    security_boundaries_json TEXT NOT NULL,
+    analysis_gaps_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(repo_path, source_revision)
+);
+
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    node_id TEXT NOT NULL,
+    repo_path TEXT NOT NULL,
+    source_revision TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    provenance TEXT NOT NULL,
+    properties_json TEXT NOT NULL,
+    PRIMARY KEY(node_id, repo_path, source_revision)
+);
+
+CREATE TABLE IF NOT EXISTS graph_edges (
+    repo_path TEXT NOT NULL,
+    source_revision TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    provenance TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    properties_json TEXT NOT NULL,
+    PRIMARY KEY(repo_path, source_revision, source_id, target_id, kind)
+);
+
+CREATE TABLE IF NOT EXISTS investigation_hypotheses (
+    hypothesis_id TEXT PRIMARY KEY,
+    scan_id TEXT NOT NULL,
+    repo_path TEXT NOT NULL,
+    target_symbol TEXT NOT NULL,
+    entry_point TEXT NOT NULL,
+    statement TEXT NOT NULL,
+    disposition TEXT NOT NULL,
+    full_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -108,12 +167,14 @@ class SQLiteStorage:
 
     def _init_db(self) -> None:
         with self._connection() as conn:
-            conn.executescript(SCHEMA_V1)
+            conn.executescript(SCHEMA_V2)
             cur = conn.execute("SELECT version FROM schema_version;")
             row = cur.fetchone()
             if not row:
-                conn.execute("INSERT INTO schema_version (version) VALUES (1);")
-                conn.commit()
+                conn.execute("INSERT INTO schema_version (version) VALUES (2);")
+            else:
+                conn.execute("UPDATE schema_version SET version = 2;")
+            conn.commit()
 
     def save_scan(self, scan_result: ScanResult) -> None:
         """Persist a complete scan result and all associated findings and threat model."""
@@ -225,3 +286,143 @@ class SQLiteStorage:
                 return cur.rowcount > 0
         except sqlite3.Error as error:
             raise StorageError(f"Database error deleting scan {scan_id}: {error}") from error
+
+    # Phase 6 Persistent Graph & Repository Memory methods
+    def save_graph(self, repo_path: str, source_revision: str, graph: SemanticProgramGraph) -> None:
+        """Persist Semantic Program Graph nodes and edges for incremental updates."""
+        try:
+            with self._connection() as conn, conn:
+                # Remove stale graph records for this revision
+                conn.execute(
+                    "DELETE FROM graph_nodes WHERE repo_path = ? AND source_revision = ?;",
+                    (repo_path, source_revision),
+                )
+                conn.execute(
+                    "DELETE FROM graph_edges WHERE repo_path = ? AND source_revision = ?;",
+                    (repo_path, source_revision),
+                )
+
+                for node in graph.nodes.values():
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO graph_nodes
+                        (node_id, repo_path, source_revision, kind, label, file_path, start_line, end_line, provenance, properties_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        """,
+                        (
+                            node.id,
+                            repo_path,
+                            source_revision,
+                            node.kind.value,
+                            node.label,
+                            node.file_path,
+                            node.start_line,
+                            node.end_line,
+                            node.provenance.value,
+                            json.dumps(node.properties),
+                        ),
+                    )
+
+                for edges in graph.out_edges.values():
+                    for edge in edges:
+                        conn.execute(
+                            """
+                            INSERT OR REPLACE INTO graph_edges
+                            (repo_path, source_revision, source_id, target_id, kind, provenance, confidence, properties_json)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                            """,
+                            (
+                                repo_path,
+                                source_revision,
+                                edge.source_id,
+                                edge.target_id,
+                                edge.kind.value,
+                                edge.provenance.value,
+                                edge.confidence,
+                                json.dumps(edge.properties),
+                            ),
+                        )
+        except sqlite3.Error as error:
+            raise StorageError(f"Database error saving semantic graph: {error}") from error
+
+    def load_graph(self, repo_path: str, source_revision: str) -> SemanticProgramGraph | None:
+        """Load persisted Semantic Program Graph from storage if present."""
+        try:
+            with self._connection() as conn:
+                cur = conn.execute(
+                    "SELECT * FROM graph_nodes WHERE repo_path = ? AND source_revision = ?;",
+                    (repo_path, source_revision),
+                )
+                node_rows = cur.fetchall()
+                if not node_rows:
+                    return None
+
+                graph = SemanticProgramGraph(repository_root=repo_path, source_revision=source_revision)
+                for r in node_rows:
+                    node = GraphNode(
+                        id=r["node_id"],
+                        kind=NodeKind(r["kind"]),
+                        label=r["label"],
+                        file_path=r["file_path"],
+                        start_line=r["start_line"],
+                        end_line=r["end_line"],
+                        provenance=RelationshipProvenance(r["provenance"]),
+                        source_revision=r["source_revision"],
+                        properties=json.loads(r["properties_json"]),
+                    )
+                    graph.add_node(node)
+
+                cur_edges = conn.execute(
+                    "SELECT * FROM graph_edges WHERE repo_path = ? AND source_revision = ?;",
+                    (repo_path, source_revision),
+                )
+                for r in cur_edges.fetchall():
+                    edge = GraphEdge(
+                        source_id=r["source_id"],
+                        target_id=r["target_id"],
+                        kind=EdgeKind(r["kind"]),
+                        provenance=RelationshipProvenance(r["provenance"]),
+                        confidence=r["confidence"],
+                        properties=json.loads(r["properties_json"]),
+                    )
+                    graph.add_edge(edge)
+
+                return graph
+        except sqlite3.Error as error:
+            raise StorageError(f"Database error loading semantic graph: {error}") from error
+
+    def save_hypothesis(self, hypothesis: InvestigationHypothesis, scan_id: str, repo_path: str) -> None:
+        """Persist structured investigation hypothesis."""
+        try:
+            with self._connection() as conn, conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO investigation_hypotheses
+                    (hypothesis_id, scan_id, repo_path, target_symbol, entry_point, statement, disposition, full_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'));
+                    """,
+                    (
+                        hypothesis.hypothesis_id,
+                        scan_id,
+                        repo_path,
+                        hypothesis.target_symbol,
+                        hypothesis.entry_point,
+                        hypothesis.statement,
+                        hypothesis.disposition,
+                        hypothesis.model_dump_json(),
+                    ),
+                )
+        except sqlite3.Error as error:
+            raise StorageError(f"Database error saving hypothesis: {error}") from error
+
+    def get_hypotheses(self, scan_id: str) -> list[InvestigationHypothesis]:
+        """Fetch all hypotheses recorded for a scan."""
+        try:
+            with self._connection() as conn:
+                cur = conn.execute(
+                    "SELECT full_json FROM investigation_hypotheses WHERE scan_id = ?;",
+                    (scan_id,),
+                )
+                return [InvestigationHypothesis.model_validate_json(row["full_json"]) for row in cur.fetchall()]
+        except sqlite3.Error as error:
+            raise StorageError(f"Database error fetching hypotheses: {error}") from error

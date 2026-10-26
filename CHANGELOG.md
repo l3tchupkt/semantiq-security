@@ -31,3 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-tier SaaS application evaluation suite (`multitenant_saas_app` and `multitenant_saas_safe`) testing multi-hop cross-component chains.
 - Multi-factor explainable prioritization scoring combining impact, reachability, attacker control, and uncertainty penalties.
 - Scalability and resilience test suite covering circular imports, deep call graphs, recursive calls, and malformed syntax recovery.
+- Versioned, typed Semantic Program Graph (`semantiq.graph`) with stable node identities, typed edges (`CALLS`, `PASSES_ARGUMENT`, `RETURNS_TO`, `DATA_FLOWS_TO`, `QUERIES`, `AUTHENTICATES`, `AUTHORIZES`, `CONTROLS_TENANT`, `SANITIZES`), and cycle-safe query engine.
+- Language frontend abstraction (`LanguageFrontend`) supporting deep Python AST parsing and language-aware JavaScript / TypeScript semantic indexing (imports, exports, functions, Express routes, and database queries).
+- Interprocedural data-flow tracing (`SPGDataFlowAnalyzer`) tracking attacker-controlled values from route parameters to sensitive sinks with context-sensitive sanitizer neutralization and tenant isolation validation.
+- Expanded Model Context Protocol (MCP) suite with 10 new security analysis tools for symbol search, caller/callee lookup, bounded neighborhood extraction, route-to-sink reachability, tenant isolation inspection, analysis gap reporting, hypothesis persistence, and evidence retrieval.
+- SQLite persistent repository memory (schema v2) persisting Semantic Program Graph nodes, edges, architectural summaries, and investigation hypotheses with content-hash invalidation.
+- Agent Skill workflow (`SKILL.md`) rewrite providing authoritative operational procedures for graph-grounded investigation, local citation verification, and controlled remediation.
+

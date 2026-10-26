@@ -132,6 +132,136 @@ TOOLS_MANIFEST = [
             },
             "required": ["scan_id"]
         }
+    },
+    {
+        "name": "semantiq_query_symbols",
+        "description": "Search and inspect symbols in the Semantic Program Graph (functions, classes, routes).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "query": {"type": "string", "description": "Symbol name or substring filter"},
+                "kind": {"type": "string", "description": "Node kind filter (function, class, route, query, etc.)"},
+                "file_path": {"type": "string", "description": "Filter by file path"},
+                "limit": {"type": "integer", "default": 25, "description": "Maximum number of symbols to return"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_query_callers_callees",
+        "description": "Lookup callers and callees for a specified symbol in the Semantic Program Graph.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "symbol_name": {"type": "string", "description": "Symbol name to look up"},
+                "direction": {"type": "string", "enum": ["callers", "callees", "both"], "default": "both"}
+            },
+            "required": ["path", "symbol_name"]
+        }
+    },
+    {
+        "name": "semantiq_query_neighborhood",
+        "description": "Extract a bounded subgraph neighborhood around a node in the Semantic Program Graph.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "node_id": {"type": "string", "description": "Node identifier to center neighborhood on"},
+                "radius": {"type": "integer", "default": 1, "description": "Search radius (1 to 3 hops)"}
+            },
+            "required": ["path", "node_id"]
+        }
+    },
+    {
+        "name": "semantiq_query_dataflow_path",
+        "description": "Trace interprocedural dataflow paths from route parameters to sensitive operations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "source_symbol": {"type": "string", "description": "Optional source parameter or function name"},
+                "sink_category": {"type": "string", "description": "Optional vulnerability category (e.g. sql_injection, ssrf)"},
+                "max_depth": {"type": "integer", "default": 10, "description": "Maximum path traversal depth"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_query_route_reachability",
+        "description": "Discover reachability chains from HTTP routes to sensitive operations in the codebase.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "route_path": {"type": "string", "description": "Optional route path pattern to filter by"},
+                "sink_kind": {"type": "string", "description": "Optional sink kind (query, process_exec, external_request)"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_query_authorization_path",
+        "description": "Inspect authentication boundaries, authorization decorators, and sensitive queries for routes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "route_path": {"type": "string", "description": "Optional route path pattern"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_query_tenant_isolation",
+        "description": "Inspect resource access paths with and without tenant ownership enforcement.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "with_ownership_check": {"type": "boolean", "description": "Filter by presence of ownership checks"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_get_analysis_gaps",
+        "description": "Retrieve unresolved dynamic dispatch sites, unparsed files, and unsupported syntax notes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_record_hypothesis",
+        "description": "Record a structured vulnerability hypothesis into persistent repository memory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "statement": {"type": "string", "description": "Hypothesis claim or proposition"},
+                "target_symbol": {"type": "string", "description": "Symbol under investigation"},
+                "entry_point": {"type": "string", "description": "Application entry point"},
+                "rule_id": {"type": "string", "description": "Vulnerability rule identifier"},
+                "disposition": {"type": "string", "enum": ["open", "confirmed", "mitigated", "false_positive"], "default": "open"}
+            },
+            "required": ["path", "statement", "target_symbol", "entry_point", "rule_id"]
+        }
+    },
+    {
+        "name": "semantiq_get_evidence",
+        "description": "Retrieve verifiable source snippets, citations, and dataflow steps for a finding.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "finding_id": {"type": "string", "description": "Target finding ID"}
+            },
+            "required": ["finding_id"]
+        }
     }
 ]
 
@@ -252,6 +382,72 @@ class MCPServer:
         elif name == "semantiq_export_report":
             report = await self.security.export_report(args["scan_id"], format=args.get("format", "json"))
             return {"report": report}
+
+        elif name == "semantiq_query_symbols":
+            return await self.security.query_symbols(
+                target=args["path"],
+                query=args.get("query"),
+                kind=args.get("kind"),
+                file_path=args.get("file_path"),
+                limit=args.get("limit", 25),
+            )
+
+        elif name == "semantiq_query_callers_callees":
+            return await self.security.query_callers_callees(
+                target=args["path"],
+                symbol_name=args["symbol_name"],
+                direction=args.get("direction", "both"),
+            )
+
+        elif name == "semantiq_query_neighborhood":
+            return await self.security.query_neighborhood(
+                target=args["path"],
+                node_id=args["node_id"],
+                radius=args.get("radius", 1),
+            )
+
+        elif name == "semantiq_query_dataflow_path":
+            return await self.security.query_dataflow_paths(
+                target=args["path"],
+                source_symbol=args.get("source_symbol"),
+                sink_category=args.get("sink_category"),
+                max_depth=args.get("max_depth", 10),
+            )
+
+        elif name == "semantiq_query_route_reachability":
+            return await self.security.query_route_reachability(
+                target=args["path"],
+                route_path=args.get("route_path"),
+                sink_kind=args.get("sink_kind"),
+            )
+
+        elif name == "semantiq_query_authorization_path":
+            return await self.security.query_authorization_path(
+                target=args["path"],
+                route_path=args.get("route_path"),
+            )
+
+        elif name == "semantiq_query_tenant_isolation":
+            return await self.security.query_tenant_isolation(
+                target=args["path"],
+                with_ownership_check=args.get("with_ownership_check"),
+            )
+
+        elif name == "semantiq_get_analysis_gaps":
+            return await self.security.get_analysis_gaps(args["path"])
+
+        elif name == "semantiq_record_hypothesis":
+            return await self.security.record_hypothesis(
+                target=args["path"],
+                statement=args["statement"],
+                target_symbol=args["target_symbol"],
+                entry_point=args["entry_point"],
+                rule_id=args["rule_id"],
+                disposition=args.get("disposition", "open"),
+            )
+
+        elif name == "semantiq_get_evidence":
+            return await self.security.get_evidence(args["finding_id"])
 
         else:
             raise ValueError(f"Unknown MCP tool: {name}")
