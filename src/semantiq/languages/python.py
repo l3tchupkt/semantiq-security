@@ -102,6 +102,7 @@ class PythonFrontend(LanguageFrontend):
 
             def visit_ClassDef(self, node: ast.ClassDef) -> None:
                 class_id = f"class:{clean_file}:{node.name}"
+                bases = [self._format_decorator(b) for b in node.bases]
                 graph.add_node(
                     GraphNode(
                         id=class_id,
@@ -112,6 +113,7 @@ class PythonFrontend(LanguageFrontend):
                         end_line=getattr(node, "end_lineno", node.lineno),
                         provenance=RelationshipProvenance.DIRECT_FACT,
                         source_revision=source_revision,
+                        properties={"bases": bases},
                     )
                 )
                 graph.add_edge(
@@ -205,17 +207,26 @@ class PythonFrontend(LanguageFrontend):
                         )
                     )
 
-                    # Auth decorators
+                    # Auth and Tenant decorators
                     for dec in decorators:
                         dec_lower = dec.lower()
                         if GLOBAL_FRAMEWORK_REGISTRY.is_auth_decorator(dec) or any(
                             k in dec_lower for k in [
                                 "login_required", "admin_required", "roles_accepted",
-                                "permission_required", "authenticated", "jwt_required"
+                                "permission_required", "authenticated", "jwt_required",
+                                "tenant_scoped", "enforce_tenant", "require_tenant", "tenant_required",
                             ]
                         ):
-                            auth_kind = NodeKind.AUTHORIZATION_CHECK if "admin" in dec_lower or "role" in dec_lower or "permission" in dec_lower else NodeKind.AUTH_CONTROL
-                            auth_edge_kind = EdgeKind.AUTHORIZES if auth_kind == NodeKind.AUTHORIZATION_CHECK else EdgeKind.AUTHENTICATES
+                            if any(k in dec_lower for k in ["tenant_scoped", "enforce_tenant", "require_tenant", "tenant_required"]):
+                                auth_kind = NodeKind.TENANT_CONTEXT
+                                auth_edge_kind = EdgeKind.CONTROLS_TENANT
+                            elif any(k in dec_lower for k in ["admin", "role", "permission"]):
+                                auth_kind = NodeKind.AUTHORIZATION_CHECK
+                                auth_edge_kind = EdgeKind.AUTHORIZES
+                            else:
+                                auth_kind = NodeKind.AUTH_CONTROL
+                                auth_edge_kind = EdgeKind.AUTHENTICATES
+
                             auth_node_id = f"auth:{clean_file}:{func_name}:{dec}"
                             graph.add_node(
                                 GraphNode(
@@ -237,31 +248,6 @@ class PythonFrontend(LanguageFrontend):
                                     provenance=RelationshipProvenance.DIRECT_FACT,
                                 )
                             )
-
-                # Tenant context in parameters
-                for p in params:
-                    if any(k in p.lower() for k in ["tenant_id", "org_id", "workspace_id"]):
-                        tenant_id = f"tenant:{clean_file}:{func_name}:{p}"
-                        graph.add_node(
-                            GraphNode(
-                                id=tenant_id,
-                                kind=NodeKind.TENANT_CONTEXT,
-                                label=f"Tenant Context: {p}",
-                                file_path=clean_file,
-                                start_line=node.lineno,
-                                end_line=node.lineno,
-                                provenance=RelationshipProvenance.DIRECT_FACT,
-                                source_revision=source_revision,
-                            )
-                        )
-                        graph.add_edge(
-                            GraphEdge(
-                                source_id=tenant_id,
-                                target_id=func_id,
-                                kind=EdgeKind.CONTROLS_TENANT,
-                                provenance=RelationshipProvenance.DIRECT_FACT,
-                            )
-                        )
 
                 # Create parameter nodes and bind to function
                 for idx, p in enumerate(params):
@@ -375,6 +361,9 @@ class PythonFrontend(LanguageFrontend):
                     self.generic_visit(node)
                     return
 
+                is_self = isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id in {"self", "cls"}
+                imported_from = imports_map.get(call_name)
+
                 # Record direct calls
                 target_symbol_id = f"sym:{call_name}"
                 graph.add_edge(
@@ -383,7 +372,13 @@ class PythonFrontend(LanguageFrontend):
                         target_id=target_symbol_id,
                         kind=EdgeKind.CALLS,
                         provenance=RelationshipProvenance.STATICALLY_INFERRED,
-                        properties={"callee_name": call_name, "line": lineno},
+                        properties={
+                            "callee_name": call_name,
+                            "line": lineno,
+                            "imported_from": imported_from,
+                            "is_self_call": is_self,
+                            "caller_class": self.curr_class,
+                        },
                     )
                 )
 
@@ -508,6 +503,103 @@ class PythonFrontend(LanguageFrontend):
                         )
                     )
 
+                # Check for session/context tenant lookup: e.g. session.get("tenant_id")
+                if call_name == "get":
+                    func_val = getattr(node.func, "value", None)
+                    v_name = getattr(func_val, "id", "") if func_val else ""
+                    if (
+                        v_name in {"session", "request", "current_user", "ctx", "context", "auth"}
+                        and node.args
+                        and isinstance(node.args[0], ast.Constant)
+                        and isinstance(node.args[0].value, str)
+                    ):
+                        key = node.args[0].value.lower()
+                        if any(k in key for k in ["tenant", "org", "workspace"]):
+                                tenant_node_id = f"tenant:{clean_file}:{lineno}:{v_name}_{key}"
+                                graph.add_node(
+                                    GraphNode(
+                                        id=tenant_node_id,
+                                        kind=NodeKind.TENANT_CONTEXT,
+                                        label=f"Tenant Context: {v_name}.{key}",
+                                        file_path=clean_file,
+                                        start_line=lineno,
+                                        end_line=lineno,
+                                        provenance=RelationshipProvenance.DIRECT_FACT,
+                                        source_revision=source_revision,
+                                        properties={"source": v_name, "key": key},
+                                    )
+                                )
+                                graph.add_edge(
+                                    GraphEdge(
+                                        source_id=tenant_node_id,
+                                        target_id=self.curr_scope,
+                                        kind=EdgeKind.CONTROLS_TENANT,
+                                        provenance=RelationshipProvenance.DIRECT_FACT,
+                                    )
+                                )
+
+                self.generic_visit(node)
+
+            def visit_Attribute(self, node: ast.Attribute) -> None:
+                v_name = getattr(node.value, "id", "")
+                attr_name = node.attr.lower()
+                if (v_name in {"current_user", "user", "session", "auth"} or "user" in v_name) and any(
+                    k in attr_name for k in ["tenant", "org", "workspace"]
+                ):
+                    lineno = getattr(node, "lineno", 1)
+                    tenant_node_id = f"tenant:{clean_file}:{lineno}:{v_name}_{attr_name}"
+                    graph.add_node(
+                        GraphNode(
+                            id=tenant_node_id,
+                            kind=NodeKind.TENANT_CONTEXT,
+                            label=f"Tenant Context: {v_name}.{attr_name}",
+                            file_path=clean_file,
+                            start_line=lineno,
+                            end_line=lineno,
+                            provenance=RelationshipProvenance.DIRECT_FACT,
+                            source_revision=source_revision,
+                            properties={"source": v_name, "key": attr_name},
+                        )
+                    )
+                    graph.add_edge(
+                        GraphEdge(
+                            source_id=tenant_node_id,
+                            target_id=self.curr_scope,
+                            kind=EdgeKind.CONTROLS_TENANT,
+                            provenance=RelationshipProvenance.DIRECT_FACT,
+                        )
+                    )
+                self.generic_visit(node)
+
+            def visit_Subscript(self, node: ast.Subscript) -> None:
+                v_name = getattr(node.value, "id", "")
+                if v_name in {"session", "request", "g", "ctx", "context", "auth"}:
+                    slice_node = node.slice
+                    key_val = getattr(slice_node, "value", None)
+                    if isinstance(key_val, str) and any(k in key_val.lower() for k in ["tenant", "org", "workspace"]):
+                        lineno = getattr(node, "lineno", 1)
+                        tenant_node_id = f"tenant:{clean_file}:{lineno}:{v_name}_{key_val}"
+                        graph.add_node(
+                            GraphNode(
+                                id=tenant_node_id,
+                                kind=NodeKind.TENANT_CONTEXT,
+                                label=f"Tenant Context: {v_name}[{key_val}]",
+                                file_path=clean_file,
+                                start_line=lineno,
+                                end_line=lineno,
+                                provenance=RelationshipProvenance.DIRECT_FACT,
+                                source_revision=source_revision,
+                                properties={"source": v_name, "key": key_val},
+                            )
+                        )
+                        graph.add_edge(
+                            GraphEdge(
+                                source_id=tenant_node_id,
+                                target_id=self.curr_scope,
+                                kind=EdgeKind.CONTROLS_TENANT,
+                                provenance=RelationshipProvenance.DIRECT_FACT,
+                            )
+                        )
                 self.generic_visit(node)
 
             def _format_decorator(self, d_node: ast.AST) -> str:

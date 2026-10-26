@@ -61,14 +61,23 @@ class SemanticProgramGraph:
         if edge.target_id not in self.in_edges:
             self.in_edges[edge.target_id] = []
 
-        # Avoid exact duplicate edges
-        existing = [
-            e for e in self.out_edges[edge.source_id]
+        # Avoid exact duplicate edges, but update provenance/confidence if refined
+        existing_indices = [
+            i for i, e in enumerate(self.out_edges[edge.source_id])
             if e.target_id == edge.target_id and e.kind == edge.kind
         ]
-        if not existing:
+        if not existing_indices:
             self.out_edges[edge.source_id].append(edge)
             self.in_edges[edge.target_id].append(edge)
+        else:
+            for idx in existing_indices:
+                old_edge = self.out_edges[edge.source_id][idx]
+                self.out_edges[edge.source_id][idx] = edge
+                if edge.target_id in self.in_edges:
+                    for in_idx, in_e in enumerate(self.in_edges[edge.target_id]):
+                        if in_e == old_edge:
+                            self.in_edges[edge.target_id][in_idx] = edge
+                            break
 
     def get_node(self, node_id: str) -> GraphNode | None:
         """Retrieve node by stable identifier."""
@@ -98,6 +107,35 @@ class SemanticProgramGraph:
         if candidates is None:
             return list(self.nodes.values())
         return [self.nodes[nid] for nid in candidates if nid in self.nodes]
+
+    def remove_file(self, rel_path: str) -> int:
+        """Remove all nodes and edges associated with a specific file (for incremental re-indexing)."""
+        clean_file = rel_path.replace("\\", "/")
+        nodes_to_remove = set(self._nodes_by_file.get(clean_file, set()))
+        if not nodes_to_remove:
+            return 0
+
+        # Remove from nodes and indices
+        for nid in nodes_to_remove:
+            node = self.nodes.pop(nid, None)
+            if node:
+                self._nodes_by_kind[node.kind].discard(nid)
+                if node.label in self._nodes_by_label:
+                    self._nodes_by_label[node.label].discard(nid)
+
+        # Remove edges
+        for nid in nodes_to_remove:
+            self.out_edges.pop(nid, None)
+            self.in_edges.pop(nid, None)
+
+        # Remove inbound and outbound edges pointing to or from removed nodes
+        for source_id, edges in list(self.out_edges.items()):
+            self.out_edges[source_id] = [e for e in edges if e.target_id not in nodes_to_remove]
+        for target_id, edges in list(self.in_edges.items()):
+            self.in_edges[target_id] = [e for e in edges if e.source_id not in nodes_to_remove]
+
+        self._nodes_by_file.pop(clean_file, None)
+        return len(nodes_to_remove)
 
     def get_callers(self, symbol_id: str) -> list[GraphNode]:
         """Return all nodes that directly call the specified symbol."""
@@ -267,16 +305,27 @@ class SemanticProgramGraph:
             n = self.nodes.get(nid)
             if n is None:
                 continue
-            if n.kind == NodeKind.AUTH_CONTROL:
+            if n.kind == NodeKind.AUTH_CONTROL and n not in auth_controls:
                 auth_controls.append(n)
-            elif n.kind == NodeKind.AUTHORIZATION_CHECK:
+            elif n.kind == NodeKind.AUTHORIZATION_CHECK and n not in authorization_checks:
                 authorization_checks.append(n)
-            elif n.kind == NodeKind.TENANT_CONTEXT:
+            elif n.kind == NodeKind.TENANT_CONTEXT and n not in tenant_controls:
                 tenant_controls.append(n)
-            elif n.kind == NodeKind.QUERY:
+            elif n.kind == NodeKind.QUERY and n not in queries:
                 queries.append(n)
 
-        # Check direct inbound edges for authenticates/authorizes
+            # Check inbound security controls for this reachable callee
+            for edge in self.in_edges.get(nid, []):
+                src_node = self.nodes.get(edge.source_id)
+                if src_node is not None:
+                    if edge.kind == EdgeKind.AUTHENTICATES and src_node not in auth_controls:
+                        auth_controls.append(src_node)
+                    elif edge.kind == EdgeKind.AUTHORIZES and src_node not in authorization_checks:
+                        authorization_checks.append(src_node)
+                    elif edge.kind == EdgeKind.CONTROLS_TENANT and src_node not in tenant_controls:
+                        tenant_controls.append(src_node)
+
+        # Check direct inbound edges for authenticates/authorizes on route itself
         for edge in self.in_edges.get(route_id, []):
             src_node = self.nodes.get(edge.source_id)
             if src_node is not None:

@@ -37,4 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded Model Context Protocol (MCP) suite with 10 new security analysis tools for symbol search, caller/callee lookup, bounded neighborhood extraction, route-to-sink reachability, tenant isolation inspection, analysis gap reporting, hypothesis persistence, and evidence retrieval.
 - SQLite persistent repository memory (schema v2) persisting Semantic Program Graph nodes, edges, architectural summaries, and investigation hypotheses with content-hash invalidation.
 - Agent Skill workflow (`SKILL.md`) rewrite providing authoritative operational procedures for graph-grounded investigation, local citation verification, and controlled remediation.
+- Semantic Program Graph accuracy and real-world investigation audit (`tests/unit/test_graph_correctness_audit.py`, `tests/integration/test_end_to_end_investigation_audit.py`):
+  * Verified edge provenance (`DIRECT_FACT`, `STATICALLY_INFERRED`, `UNRESOLVED`) and disambiguated import-directed call resolution.
+  * Corrected unsound tenant heuristic: eliminated unvalidated parameter name checks (`tenant_id`, `org_id`) and enforced genuine session context lookups (`session.get("tenant_id")`) and guard decorators.
+  * Created 8 difficult interprocedural flow fixtures (`tests/fixtures/interprocedural_app` and `tests/fixtures/interprocedural_safe`): 3+ module database parameter flow, tenant resource access by object ID, route authorization divergence, helper function SSRF dispatch, sanitized vs unsanitized branch execution, class method inheritance resolution, dynamic dispatch marking, and safe counterexample.
+  * Audited JavaScript/TypeScript frontend semantics: disclosed structural regex scanner limitations and added explicit gap tracking for closures, callbacks, optional chaining, template strings, and TypeScript generics.
+  * Verified persistent memory and incremental graph invalidation (`SemanticProgramGraph.remove_file`) across cold, warm, changed, and deleted file operations.
+  * End-to-end MCP JSON-RPC audit testing bounded outputs, error resilience, and autonomous AI investigation workflow.
+
 

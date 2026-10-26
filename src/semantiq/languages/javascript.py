@@ -35,12 +35,16 @@ class JavaScriptFrontend(LanguageFrontend):
     def get_capabilities(self) -> FrontendCapabilities:
         return FrontendCapabilities(
             language_id="javascript",
-            parsing_coverage="ES6+ and TypeScript module imports, exports, functions, arrow functions, classes, and Express router handlers",
-            symbol_resolution_coverage="Module imports, commonJS require(), export bindings, and handler symbol linking",
+            parsing_coverage="Regex-based structural syntax scanner (not a full AST or type-checker). Extracts ES6/CommonJS imports, exports, functions, arrow functions, classes, and Express routes",
+            symbol_resolution_coverage="Module imports, CommonJS require(), export bindings, and Express handler symbol linking",
             call_graph_coverage="Direct function invocations, route-to-handler bindings, database queries, and process execution sinks",
             data_flow_capabilities="Express req.body/params/query tracking into route handlers and sink invocations",
             framework_semantics=["Express", "Node.js standard libraries (fs, child_process, http)", "Axios", "PG / MySQL / Knex"],
-            unsupported_syntax_notes=["Dynamic code evaluation via eval() and computed property member access are tracked as unresolved dispatch"],
+            unsupported_syntax_notes=[
+                "Structural scanner limitation: Does not build full lexical closure scopes or AST type-flow graphs",
+                "Dynamic code evaluation via eval() and computed property member access are tracked as unresolved dispatch",
+                "TypeScript interfaces, generics, and type-only imports are skipped without full compiler analysis",
+            ],
         )
 
     def parse_file(
@@ -137,7 +141,65 @@ class JavaScriptFrontend(LanguageFrontend):
                             )
                         )
 
-        # 3. Extract Functions & Arrow Functions
+        # 3. Extract Classes and Inheritance
+        class_decl = re.compile(r"""class\s+([a-zA-Z0-9_$]+)(?:\s+extends\s+([a-zA-Z0-9_$]+))?""")
+        for lineno, line in enumerate(lines, start=1):
+            m_cls = class_decl.search(line)
+            if m_cls:
+                cls_name, base_name = m_cls.groups()
+                cls_id = f"class:{clean_file}:{cls_name}"
+                graph.add_node(
+                    GraphNode(
+                        id=cls_id,
+                        kind=NodeKind.CLASS,
+                        label=cls_name,
+                        file_path=clean_file,
+                        start_line=lineno,
+                        end_line=lineno,
+                        provenance=RelationshipProvenance.DIRECT_FACT,
+                        source_revision=source_revision,
+                        properties={"bases": [base_name] if base_name else []},
+                    )
+                )
+                graph.add_edge(
+                    GraphEdge(
+                        source_id=file_node_id,
+                        target_id=cls_id,
+                        kind=EdgeKind.DEFINES,
+                        provenance=RelationshipProvenance.DIRECT_FACT,
+                    )
+                )
+
+        # 4. Extract Exports
+        export_decl = re.compile(r"""export\s+(?:default\s+)?(?:const|let|var|function|class)?\s*([a-zA-Z0-9_$]+)""")
+        for lineno, line in enumerate(lines, start=1):
+            m_exp = export_decl.search(line)
+            if m_exp:
+                exp_sym = m_exp.group(1)
+                exp_id = f"export:{clean_file}:{lineno}:{exp_sym}"
+                graph.add_node(
+                    GraphNode(
+                        id=exp_id,
+                        kind=NodeKind.MODULE,
+                        label=f"export {exp_sym}",
+                        file_path=clean_file,
+                        start_line=lineno,
+                        end_line=lineno,
+                        provenance=RelationshipProvenance.DIRECT_FACT,
+                        source_revision=source_revision,
+                        properties={"symbol": exp_sym},
+                    )
+                )
+                graph.add_edge(
+                    GraphEdge(
+                        source_id=file_node_id,
+                        target_id=exp_id,
+                        kind=EdgeKind.DEFINES,
+                        provenance=RelationshipProvenance.DIRECT_FACT,
+                    )
+                )
+
+        # 5. Extract Functions & Arrow Functions
         func_decl = re.compile(r"""(?:async\s+)?function\s+([a-zA-Z0-9_$]+)\s*\(([^)]*)\)""")
         arrow_func = re.compile(r"""(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>""")
 
@@ -200,6 +262,15 @@ class JavaScriptFrontend(LanguageFrontend):
                         provenance=RelationshipProvenance.DIRECT_FACT,
                     )
                 )
+
+        # Gap Detection across file
+        for lineno, line in enumerate(lines, start=1):
+            if re.search(r"""(?:\.(?:then|catch|map|filter|forEach|on)|\b(?:setTimeout|setInterval|setImmediate))\s*\(\s*(?:function|\([^)]*\)\s*=>)""", line):
+                gaps.append(f"Line {lineno}: Callback/closure lexical environment not fully traced in JS/TS frontend")
+            if re.search(r"""\?\.\w+""", line):
+                gaps.append(f"Line {lineno}: Optional chaining (?.) syntax detected; evaluated as optimistic property access")
+            if re.search(r"""\b(?:interface|type)\s+[A-Za-z0-9_$]+|\b[A-Za-z0-9_$]+<[A-Za-z0-9_$,\s]+>""", line):
+                gaps.append(f"Line {lineno}: TypeScript type definitions or generics ignored by structural scanner")
 
         # 4. Extract Express / HTTP Routes
         # app.get('/path', handler) or router.post('/path', middleware, handler)
@@ -272,8 +343,8 @@ class JavaScriptFrontend(LanguageFrontend):
 
         # 5. Extract Dangerous Sinks and Queries
         for lineno, line in enumerate(lines, start=1):
-            # Database SQL: db.query(...) / pool.query(...)
-            if re.search(r"""\b(?:db|pool|client|connection|sequelize)\.(?:query|execute|raw)\s*\(""", line):
+            # Database SQL: db.query(...) / pool.query(...) / executeQuery(...)
+            if re.search(r"""\b(?:db|pool|client|connection|sequelize)\.(?:query|execute|raw)\s*\(|\b(?:executeQuery|executeSql)\s*\(""", line):
                 sink_id = f"sink:sql:{clean_file}:{lineno}"
                 graph.add_node(
                     GraphNode(

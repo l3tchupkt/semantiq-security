@@ -136,15 +136,92 @@ class GraphBuilder:
                 if short_name != node.label:
                     symbol_targets.setdefault(short_name, []).append(node)
 
+        # Index all classes by label and methods by qualified name
+        classes: dict[str, GraphNode] = {n.label: n for n in graph.nodes.values() if n.kind == NodeKind.CLASS}
+
         # Find unresolved calls and placeholder edges
         edges_to_add: list[GraphEdge] = []
         for source_id, edges in list(graph.out_edges.items()):
+            source_node = graph.nodes.get(source_id)
+            source_file = source_node.file_path if source_node else ""
+
             for edge in list(edges):
                 if edge.kind == EdgeKind.CALLS and edge.target_id.startswith("sym:") and ":" not in edge.target_id[4:]:
                     callee_name = edge.target_id[4:]
-                    targets = symbol_targets.get(callee_name, [])
-                    if targets:
-                        target_node = targets[0]
+                    imported_from = edge.properties.get("imported_from")
+                    is_self_call = edge.properties.get("is_self_call", False)
+                    caller_class = edge.properties.get("caller_class")
+
+                    target_node: GraphNode | None = None
+
+                    # 1. Check method inheritance for self calls
+                    if is_self_call and caller_class and caller_class in classes:
+                        cls_node = classes[caller_class]
+                        bases = cls_node.properties.get("bases", [])
+                        for base_name in bases:
+                            base_qname = f"{base_name}.{callee_name}"
+                            base_matches = symbol_targets.get(base_qname, [])
+                            if base_matches:
+                                target_node = base_matches[0]
+                                break
+
+                    # 2. Check import-directed resolution
+                    if target_node is None and imported_from:
+                        # e.g. "services.tenant_service.get_tenant_document" -> "services/tenant_service"
+                        mod_part = imported_from.rsplit(".", 1)[0].replace(".", "/")
+                        matched_by_import = [
+                            t for t in symbol_targets.get(callee_name, [])
+                            if mod_part in t.file_path or t.file_path.endswith(f"{mod_part}.py")
+                        ]
+                        if len(matched_by_import) == 1:
+                            target_node = matched_by_import[0]
+                        elif len(matched_by_import) > 1:
+                            # Ambiguous across multiple matching files
+                            edges_to_add.append(
+                                GraphEdge(
+                                    source_id=source_id,
+                                    target_id=edge.target_id,
+                                    kind=EdgeKind.CALLS,
+                                    provenance=RelationshipProvenance.UNRESOLVED,
+                                    confidence=0.4,
+                                    properties={"callee_name": callee_name, "reason": "ambiguous_imported_target"},
+                                )
+                            )
+                            continue
+
+                    # 3. Prefer local file definition if available
+                    if target_node is None:
+                        candidates = symbol_targets.get(callee_name, [])
+                        local_candidates = [t for t in candidates if t.file_path == source_file]
+                        if len(local_candidates) == 1:
+                            target_node = local_candidates[0]
+                        elif len(candidates) == 1:
+                            target_node = candidates[0]
+                        elif len(candidates) > 1:
+                            # Unresolved ambiguous call: do NOT silently link
+                            if edge in graph.out_edges.get(source_id, []):
+                                graph.out_edges[source_id].remove(edge)
+                            edges_to_add.append(
+                                GraphEdge(
+                                    source_id=source_id,
+                                    target_id=edge.target_id,
+                                    kind=EdgeKind.CALLS,
+                                    provenance=RelationshipProvenance.UNRESOLVED,
+                                    confidence=0.3,
+                                    properties={
+                                        "callee_name": callee_name,
+                                        "reason": "ambiguous_cross_module_call",
+                                        "candidate_count": len(candidates),
+                                    },
+                                )
+                            )
+                            continue
+
+                    if target_node is not None:
+                        # Remove placeholder call edge
+                        if edge in graph.out_edges.get(source_id, []):
+                            graph.out_edges[source_id].remove(edge)
+
                         # Statically inferred cross-module call edge
                         edges_to_add.append(
                             GraphEdge(
@@ -152,8 +229,8 @@ class GraphBuilder:
                                 target_id=target_node.id,
                                 kind=EdgeKind.CALLS,
                                 provenance=RelationshipProvenance.STATICALLY_INFERRED,
-                                confidence=0.9 if len(targets) == 1 else 0.6,
-                                properties={"callee_name": callee_name, "candidates": len(targets)},
+                                confidence=0.95 if imported_from else 0.75,
+                                properties={"callee_name": callee_name},
                             )
                         )
                         edges_to_add.append(
@@ -186,10 +263,14 @@ class GraphBuilder:
                                         confidence=0.8,
                                     )
                                 )
+
+                        # Connect helper to sinks directly reached by the caller function
+                        for sink_edge in edges:
+                            if sink_edge.kind in (EdgeKind.REACHES, EdgeKind.QUERIES, EdgeKind.ACCESSES_RESOURCE):
                                 edges_to_add.append(
                                     GraphEdge(
-                                        source_id=source_id,
-                                        target_id=p_edge.target_id,
+                                        source_id=target_node.id,
+                                        target_id=sink_edge.target_id,
                                         kind=EdgeKind.DATA_FLOWS_TO,
                                         provenance=RelationshipProvenance.STATICALLY_INFERRED,
                                         confidence=0.8,
