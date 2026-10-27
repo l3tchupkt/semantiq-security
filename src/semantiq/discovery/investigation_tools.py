@@ -7,6 +7,8 @@ safe file reading, and hypothesis tracking.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -39,12 +41,26 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
     ToolDefinition(
         name="get_repository_overview",
         description=(
-            "Retrieve high-level architectural overview: routes/entry points, sensitive sinks, "
-            "security boundaries, and unresolved dispatch areas."
+            "Retrieve high-level architectural overview: repository files, routes/entry points, "
+            "sensitive sinks, security boundaries, and unresolved dispatch areas."
         ),
         parameters={
             "type": "object",
             "properties": {},
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="list_repository_files",
+        description="List repository files and directory structure in scope for security investigation.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "Optional directory path to filter (e.g. 'api', 'services'). If omitted, lists all repository files.",
+                },
+            },
             "additionalProperties": False,
         },
     ),
@@ -329,6 +345,30 @@ class InvestigationToolExecutor:
         ]
         unresolved = self.graph.find_unresolved_regions()
 
+        repo_files = sorted([f.replace("\\", "/") for f in self.intelligence.file_metadata])
+        if not repo_files:
+            for p in self.repository_root.rglob("*.py"):
+                if p.is_file() and not any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv") for part in p.parts):
+                    with contextlib.suppress(Exception):
+                        repo_files.append(str(p.relative_to(self.repository_root)).replace("\\", "/"))
+            repo_files.sort()
+
+        entry_points: list[dict[str, Any]] = []
+        for fpath, syms in self.intelligence.symbols.items():
+            norm_f = fpath.replace("\\", "/")
+            for s in syms:
+                if s.kind in ("function", "method", "class") and (
+                    any(k in norm_f for k in ("api", "router", "route", "service", "handler", "worker")) or s.decorators
+                ):
+                    entry_points.append({
+                        "name": s.name,
+                        "qualified_name": s.qualified_name,
+                        "kind": s.kind,
+                        "file_path": norm_f,
+                        "line": s.start_line,
+                        "decorators": s.decorators,
+                    })
+
         return {
             "status": "success",
             "repository_root": str(self.repository_root),
@@ -337,6 +377,8 @@ class InvestigationToolExecutor:
             "total_routes": len(routes),
             "total_sensitive_sinks": len(sensitive_sinks),
             "unresolved_dispatch_areas": len(unresolved),
+            "repository_files": repo_files,
+            "key_entry_points": entry_points[:25],
             "routes": [
                 {
                     "route_path": r.properties.get("route_path", r.label),
@@ -359,9 +401,39 @@ class InvestigationToolExecutor:
             "unresolved_sample": unresolved[:5],
         }
 
+    def _tool_list_repository_files(self, args: dict[str, Any]) -> dict[str, Any]:
+        target_dir = args.get("directory", "").strip().strip("/\\").replace("\\", "/")
+        repo_files = sorted([f.replace("\\", "/") for f in self.intelligence.file_metadata])
+        if not repo_files:
+            for p in self.repository_root.rglob("*"):
+                if p.is_file() and not any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv") for part in p.parts):
+                    with contextlib.suppress(Exception):
+                        repo_files.append(str(p.relative_to(self.repository_root)).replace("\\", "/"))
+            repo_files.sort()
+
+        if target_dir:
+            filtered = [f for f in repo_files if f.startswith(target_dir + "/") or f == target_dir]
+        else:
+            filtered = repo_files
+
+        return {
+            "status": "success",
+            "directory": target_dir or "/",
+            "total_files": len(filtered),
+            "files": filtered[:100],
+        }
+
     def _tool_get_source_excerpt(self, args: dict[str, Any]) -> dict[str, Any]:
-        file_path = args.get("file_path", "")
-        symbol = args.get("symbol", "")
+        raw_file_path = args.get("file_path", "").strip()
+        file_path = raw_file_path.replace("\\", "/")
+        repo_str = str(self.repository_root).replace("\\", "/")
+        if file_path.startswith(repo_str):
+            file_path = file_path[len(repo_str):].lstrip("/\\")
+        if file_path.startswith("./"):
+            file_path = file_path[2:]
+        file_path = file_path.lstrip("/")
+
+        symbol = args.get("symbol", "").strip()
 
         start_line_arg = args.get("start_line")
         end_line_arg = args.get("end_line")
@@ -431,47 +503,68 @@ class InvestigationToolExecutor:
             return {"status": "error", "error": f"Failed to retrieve excerpt: {err}"}
 
     def _tool_query_symbols(self, args: dict[str, Any]) -> dict[str, Any]:
-        query = args.get("query", "").lower()
-        scope_file = args.get("file_path", "")
+        raw_query = args.get("query", "").strip()
+        query = raw_query.lower()
+        scope_file = args.get("file_path", "").strip().replace("\\", "/")
+        repo_str = str(self.repository_root).replace("\\", "/")
+        if scope_file.startswith(repo_str):
+            scope_file = scope_file[len(repo_str):].lstrip("/\\")
+        if scope_file.startswith("./"):
+            scope_file = scope_file[2:]
+        scope_file = scope_file.lstrip("/")
 
         matches: list[dict[str, Any]] = []
 
+        is_all_query = query in ("", "*", "all")
+        is_func_query = query in ("def", "function", "func", "async_function", "method")
+        is_class_query = query in ("class", "classes")
+
         # 1. Search intelligence symbols
         for fpath, sym_list in self.intelligence.symbols.items():
-            if scope_file and scope_file not in fpath:
+            norm_f = fpath.replace("\\", "/")
+            if scope_file and scope_file not in norm_f:
                 continue
             for s in sym_list:
-                if query in s.name.lower() or query in s.qualified_name.lower():
+                match = False
+                if is_all_query or is_func_query and s.kind in ("function", "async_function", "method") or is_class_query and s.kind == "class" or query in s.name.lower() or query in s.qualified_name.lower():
+                    match = True
+
+                if match:
                     matches.append({
                         "name": s.name,
                         "qualified_name": s.qualified_name,
                         "kind": s.kind,
-                        "file_path": fpath,
+                        "file_path": norm_f,
                         "start_line": s.start_line,
                         "end_line": s.end_line,
                     })
 
         # 2. Search SPG nodes
         for node in self.graph.nodes.values():
-            if scope_file and node.file_path and scope_file not in node.file_path:
+            node_fpath = (node.file_path or "").replace("\\", "/")
+            if scope_file and node_fpath and scope_file not in node_fpath:
                 continue
-            if (query in node.label.lower() or query in node.id.lower()) and not any(
-                m["file_path"] == node.file_path and m["start_line"] == node.start_line for m in matches
+            match = False
+            if is_all_query or is_func_query and node.kind in (NodeKind.FUNCTION, NodeKind.METHOD) or is_class_query and node.kind == NodeKind.CLASS or query in node.label.lower() or query in node.id.lower():
+                match = True
+
+            if match and not any(
+                m["file_path"] == node_fpath and m["start_line"] == node.start_line for m in matches
             ):
                 matches.append({
                     "name": node.label,
                     "qualified_name": node.id,
                     "kind": node.kind.value,
-                    "file_path": node.file_path,
+                    "file_path": node_fpath,
                     "start_line": node.start_line,
                     "end_line": node.end_line,
                 })
 
         return {
             "status": "success",
-            "query": query,
+            "query": raw_query,
             "total_matches": len(matches),
-            "matches": matches[:25],
+            "matches": matches[:50],
         }
 
     def _tool_query_callers_callees(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -855,6 +948,13 @@ class InvestigationToolExecutor:
     def _tool_finish_investigation(self, args: dict[str, Any]) -> dict[str, Any]:
         summary = args.get("summary", "")
         raw_findings = args.get("findings", [])
+        if isinstance(raw_findings, str):
+            try:
+                raw_findings = json.loads(raw_findings)
+            except Exception:
+                raw_findings = []
+        if not isinstance(raw_findings, list):
+            raw_findings = [raw_findings] if isinstance(raw_findings, dict) else []
 
         self.is_finished = True
         self.finish_summary = summary
@@ -864,18 +964,35 @@ class InvestigationToolExecutor:
         invalid_citations: list[dict[str, Any]] = []
 
         for rf in raw_findings:
-            fpath = rf.get("file_path", "")
-            sline = int(rf.get("start_line", 1))
-            eline = int(rf.get("end_line", sline))
+            if isinstance(rf, str):
+                try:
+                    rf = json.loads(rf)
+                except Exception:
+                    continue
+            if not isinstance(rf, dict):
+                continue
 
-            # Retrieve snippet from file
+            raw_fpath = rf.get("file_path", "").strip().replace("\\", "/")
+            repo_str = str(self.repository_root).replace("\\", "/").rstrip("/")
+            if raw_fpath.startswith(repo_str):
+                raw_fpath = raw_fpath[len(repo_str):]
+            if raw_fpath.startswith("./"):
+                raw_fpath = raw_fpath[2:]
+            fpath = raw_fpath.lstrip("/")
+
+            # Retrieve snippet from file and clamp line numbers to actual line count
             try:
                 full_p = resolve_safe_path(self.repository_root, fpath)
                 lines = full_p.read_text(encoding="utf-8", errors="replace").splitlines()
+                total_lines = len(lines)
+                sline = max(1, min(int(rf.get("start_line", 1)), total_lines))
+                eline = max(sline, min(int(rf.get("end_line", sline)), total_lines))
                 s_idx = max(0, sline - 1)
                 e_idx = min(len(lines), eline)
                 snippet = "\n".join(lines[s_idx:e_idx])
             except Exception:
+                sline = int(rf.get("start_line", 1))
+                eline = int(rf.get("end_line", sline))
                 snippet = ""
 
             loc = SourceLocation(

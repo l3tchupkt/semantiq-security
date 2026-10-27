@@ -472,6 +472,7 @@ async def evaluate_single_case(
     provider_name: str,
     model_name: str | None = None,
     api_key: str | None = None,
+    endpoint_url: str | None = None,
 ) -> dict[str, Any]:
     """Execute evaluation for one isolated ground truth case."""
     case_id = case_spec["case_id"]
@@ -500,12 +501,43 @@ async def evaluate_single_case(
     ai_provider: BaseAIProvider
     is_scripted_mock = False
 
-    if provider_name == "openai":
+    if provider_name == "nvidia":
+        key = api_key or os.environ.get("NVIDIA_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        endpoint = endpoint_url or "https://integrate.api.nvidia.com/v1"
+        model = model_name or "nvidia/nemotron-3.5-lightning-30b-a3b"
+        ai_provider = OpenAIProvider(
+            AIConfig(
+                enabled=True,
+                provider="openai",
+                model=model,
+                api_key=key,
+                endpoint_url=endpoint,
+                timeout_seconds=90.0,
+            )
+        )
+    elif provider_name == "openai":
         key = api_key or os.environ.get("OPENAI_API_KEY")
-        ai_provider = OpenAIProvider(AIConfig(enabled=True, provider="openai", model=model_name or "gpt-4o", api_key=key))
+        ai_provider = OpenAIProvider(
+            AIConfig(
+                enabled=True,
+                provider="openai",
+                model=model_name or "gpt-4o",
+                api_key=key,
+                endpoint_url=endpoint_url,
+                timeout_seconds=60.0,
+            )
+        )
     elif provider_name == "anthropic":
         key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-        ai_provider = AnthropicProvider(AIConfig(enabled=True, provider="anthropic", model=model_name or "claude-3-5-sonnet-20241022", api_key=key))
+        ai_provider = AnthropicProvider(
+            AIConfig(
+                enabled=True,
+                provider="anthropic",
+                model=model_name or "claude-3-5-sonnet-20241022",
+                api_key=key,
+                timeout_seconds=60.0,
+            )
+        )
     else:
         is_scripted_mock = True
         script = (
@@ -518,6 +550,7 @@ async def evaluate_single_case(
             tool_script=script,
         )
 
+
     # 3. Autonomous AI Investigation on Vulnerable Target
     print("\n[Step 2] Running AI Investigation on Vulnerable Target...")
     inspector = RepositoryInspector(ScanConfig(ai_enabled=True))
@@ -525,11 +558,12 @@ async def evaluate_single_case(
     intelligence = RepositoryIntelligence(vuln_fixture)
     intelligence.index_repository(inspection.in_scope_files)
 
+    investigation_timeout = 240.0 if not is_scripted_mock else 45.0
     ai_investigator = LiveAIInvestigator(
         repository_root=vuln_fixture,
         intelligence=intelligence,
         ai_provider=ai_provider,
-        budget=InvestigationBudget(max_depth=8, timeout_seconds=45.0),
+        budget=InvestigationBudget(max_depth=8, timeout_seconds=investigation_timeout),
         source_revision=inspection.git_revision or "",
     )
 
@@ -569,17 +603,21 @@ async def evaluate_single_case(
     safe_intelligence = RepositoryIntelligence(safe_fixture)
     safe_intelligence.index_repository(safe_inspection.in_scope_files)
 
+    safe_timeout = 180.0 if not is_scripted_mock else 30.0
     safe_investigator = LiveAIInvestigator(
         repository_root=safe_fixture,
         intelligence=safe_intelligence,
         ai_provider=safe_provider,
-        budget=InvestigationBudget(max_depth=6, timeout_seconds=30.0),
+        budget=InvestigationBudget(max_depth=6, timeout_seconds=safe_timeout),
         source_revision=safe_inspection.git_revision or "",
     )
+
 
     safe_trace = await safe_investigator.investigate(prompt_hint=None)
     safe_fp_count = len(safe_trace.final_findings)
     print(f"  Safe counterpart findings: {safe_fp_count} (Expected: 0 false positives)")
+    for sf in safe_trace.final_findings:
+        print(f"    * FP: [{sf.rule_id}] {sf.title} at {sf.file_path}:{sf.start_line}-{sf.end_line}")
 
     # 5. Result Scoring against Hidden Ground Truth
     flaw_discovered = False
@@ -625,6 +663,7 @@ async def evaluate_single_case(
         "safe_counterpart": {
             "status": safe_trace.status,
             "false_positives_count": safe_fp_count,
+            "findings": [f.model_dump() for f in safe_trace.final_findings],
         },
     }
 
@@ -633,6 +672,7 @@ async def run_evaluation(
     provider_name: str = "mock",
     model_name: str | None = None,
     api_key: str | None = None,
+    endpoint_url: str | None = None,
 ) -> dict[str, Any]:
     """Execute complete beyond-heuristics evaluation across all cases."""
     print("=" * 80)
@@ -641,18 +681,19 @@ async def run_evaluation(
     print("=" * 80)
     print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
     print(f"Configured Provider: {provider_name}")
-    if provider_name in ("openai", "anthropic"):
-        has_key = bool(api_key or os.environ.get(f"{provider_name.upper()}_API_KEY"))
+    if provider_name in ("openai", "anthropic", "nvidia"):
+        env_var = "NVIDIA_API_KEY" if provider_name == "nvidia" else f"{provider_name.upper()}_API_KEY"
+        has_key = bool(api_key or os.environ.get(env_var) or os.environ.get("OPENAI_API_KEY"))
         print(f"API Credentials Present: {has_key}")
 
     case_results: list[dict[str, Any]] = []
     for _case_id, case_spec in GROUND_TRUTH_CASES.items():
         res = await evaluate_single_case(
-
             case_spec=case_spec,
             provider_name=provider_name,
             model_name=model_name,
             api_key=api_key,
+            endpoint_url=endpoint_url,
         )
         case_results.append(res)
 
@@ -678,7 +719,7 @@ async def run_evaluation(
         "evaluation_name": "beyond_heuristics_multi_case",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "provider": provider_name,
-        "model": model_name or "default",
+        "model": model_name or ("nvidia/nemotron-3.5-lightning-30b-a3b" if provider_name == "nvidia" else "default"),
         "cases_evaluated": len(case_results),
         "results": case_results,
     }
@@ -692,9 +733,18 @@ async def run_evaluation(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Beyond-Heuristics AI Vulnerability Discovery Evaluation")
-    parser.add_argument("--provider", choices=["mock", "openai", "anthropic"], default="mock")
+    parser.add_argument("--provider", choices=["mock", "openai", "anthropic", "nvidia"], default="mock")
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--api-key", type=str, default=None)
+    parser.add_argument("--endpoint-url", type=str, default=None)
     args = parser.parse_args()
 
-    asyncio.run(run_evaluation(provider_name=args.provider, model_name=args.model, api_key=args.api_key))
+    asyncio.run(
+        run_evaluation(
+            provider_name=args.provider,
+            model_name=args.model,
+            api_key=args.api_key,
+            endpoint_url=args.endpoint_url,
+        )
+    )
+

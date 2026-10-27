@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from typing import Any
@@ -29,9 +30,16 @@ class OpenAIProvider(BaseAIProvider):
 
     def __init__(self, config: AIConfig) -> None:
         super().__init__(config)
-        self.endpoint = config.endpoint_url or "https://api.openai.com/v1/chat/completions"
+        endpoint = config.endpoint_url or "https://api.openai.com/v1/chat/completions"
+        if endpoint.rstrip("/").endswith("/v1"):
+            self.endpoint = endpoint.rstrip("/") + "/chat/completions"
+        elif not endpoint.endswith("/chat/completions") and "/v1" not in endpoint:
+            self.endpoint = endpoint.rstrip("/") + "/v1/chat/completions"
+        else:
+            self.endpoint = endpoint
         self.model = config.model or "gpt-4o"
         self.api_key = config.api_key
+
 
     async def complete(self, prompt: str, system_prompt: str | None = None) -> str:
         if not self.api_key:
@@ -91,57 +99,73 @@ class OpenAIProvider(BaseAIProvider):
             "model": self.model,
             "messages": full_messages,
             "temperature": self.config.temperature,
+            "max_tokens": 4096,
         }
         if tools:
             payload["tools"] = [t.to_openai_tool() for t in tools]
 
-        try:
-            async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
-                response = await client.post(self.endpoint, headers=headers, json=payload)
-                if response.status_code == 401:
-                    raise ProviderAuthenticationError("Invalid API key for OpenAI provider.")
-                if response.status_code == 429:
-                    raise ProviderRateLimitError("OpenAI rate limit exceeded.")
-                if response.status_code >= 400:
-                    raise ProviderError(f"OpenAI error {response.status_code}: {response.text}")
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
+                    response = await client.post(self.endpoint, headers=headers, json=payload)
+                    if response.status_code == 401:
+                        raise ProviderAuthenticationError("Invalid API key for OpenAI provider.")
+                    if response.status_code == 429:
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(2.0 * (attempt + 1))
+                            continue
+                        raise ProviderRateLimitError("OpenAI rate limit exceeded.")
+                    if response.status_code in (500, 502, 503, 504) and attempt < max_retries - 1:
+                        await asyncio.sleep(1.5 * (attempt + 1))
+                        continue
+                    if response.status_code >= 400:
+                        raise ProviderError(f"OpenAI error {response.status_code}: {response.text}")
 
-                data = response.json()
-                choice = data["choices"][0]
-                message = choice.get("message", {})
-                content = message.get("content")
-                finish_reason = choice.get("finish_reason", "stop")
+                    data = response.json()
+                    choice = data["choices"][0]
+                    message = choice.get("message", {})
+                    content = message.get("content") or message.get("reasoning_content")
+                    finish_reason = choice.get("finish_reason", "stop")
 
-                tool_calls: list[InvestigationToolCall] = []
-                for tc in message.get("tool_calls", []):
-                    fn = tc.get("function", {})
-                    call_id = tc.get("id", f"call_{uuid.uuid4().hex[:6]}")
-                    tool_name = fn.get("name", "")
-                    try:
-                        args = json.loads(fn.get("arguments", "{}"))
-                    except Exception:
-                        args = {"raw": fn.get("arguments", "")}
-                    tool_calls.append(
-                        InvestigationToolCall(
-                            call_id=call_id,
-                            tool_name=tool_name,
-                            arguments=args if isinstance(args, dict) else {"value": args},
+                    tool_calls: list[InvestigationToolCall] = []
+                    for tc in message.get("tool_calls", []):
+                        fn = tc.get("function", {})
+                        call_id = tc.get("id", f"call_{uuid.uuid4().hex[:6]}")
+                        tool_name = fn.get("name", "")
+                        try:
+                            args = json.loads(fn.get("arguments", "{}"))
+                        except Exception:
+                            args = {"raw": fn.get("arguments", "")}
+                        tool_calls.append(
+                            InvestigationToolCall(
+                                call_id=call_id,
+                                tool_name=tool_name,
+                                arguments=args if isinstance(args, dict) else {"value": args},
+                            )
                         )
+
+                    usage = data.get("usage", {})
+                    tokens_used = usage.get("total_tokens", 0)
+
+                    return ProviderToolResponse(
+                        content=content,
+                        tool_calls=tool_calls,
+                        tokens_used=tokens_used,
+                        finish_reason=finish_reason,
+                        raw_response={"id": data.get("id"), "model": data.get("model"), "usage": usage},
                     )
-
-                usage = data.get("usage", {})
-                tokens_used = usage.get("total_tokens", 0)
-
-                return ProviderToolResponse(
-                    content=content,
-                    tool_calls=tool_calls,
-                    tokens_used=tokens_used,
-                    finish_reason=finish_reason,
-                    raw_response={"id": data.get("id"), "model": data.get("model"), "usage": usage},
-                )
-        except httpx.TimeoutException as error:
-            raise ProviderTimeoutError(f"OpenAI request timed out: {error}") from error
-        except httpx.RequestError as error:
-            raise ProviderError(f"OpenAI request failed: {error}") from error
+            except httpx.TimeoutException as error:
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                raise ProviderTimeoutError(f"OpenAI request timed out: {error}") from error
+            except httpx.RequestError as error:
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                raise ProviderError(f"OpenAI request failed: {type(error).__name__}: {error}") from error
+        raise ProviderError("OpenAI request failed after all retry attempts.")
 
     async def investigate_finding(
         self,

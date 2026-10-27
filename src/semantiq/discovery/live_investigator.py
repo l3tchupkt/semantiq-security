@@ -143,15 +143,16 @@ class LiveAIInvestigator:
             "You are a principal application security research engineer. Your objective is deep, autonomous "
             "vulnerability discovery in an unfamiliar codebase.\n\n"
             "INVESTIGATION DISCIPLINE:\n"
-            "1. Discovery & Architecture: Discover entry points, routes, sensitive sinks, and trust boundaries.\n"
+            "1. Discovery & Architecture: Discover entry points, routes, sensitive sinks, and trust boundaries. "
+            "Use get_repository_overview or list_repository_files to inspect directory structure and files in scope.\n"
             "2. Formulate Hypotheses: Propose specific, testable vulnerability hypotheses using record_hypothesis.\n"
             "3. Ground Truth Verification: Use get_source_excerpt to inspect real implementation code at specific lines.\n"
-            "4. Follow Interprocedural Paths: Query callers, callees, and data-flow across components.\n"
+            "4. Follow Interprocedural Paths: Query callers, callees, data-flow, and authorization boundaries across components.\n"
             "5. Actively Search for Counterevidence: Look for input validation, sanitizers, authorization middleware, "
             "or state machine checks. If found, challenge the hypothesis using challenge_hypothesis with disposition 'mitigated' or 'false_positive'.\n"
             "6. Conclude Investigation: When you have sufficient evidence or have disproved candidates, call finish_investigation "
             "with exact line citations. Findings with incorrect line citations will be rejected.\n"
-            "CRITICAL: Do NOT assume absent graph edges mean code is safe."
+            "CRITICAL: Always use relative file paths (e.g. 'api/delegation.py') when requesting source excerpts or submitting findings."
         )
 
         initial_user_message = (
@@ -167,7 +168,7 @@ class LiveAIInvestigator:
         ]
 
         turn_count = 0
-        max_turns = min(15, max(4, self.budget.max_depth * 2))
+        max_turns = min(20, max(6, self.budget.max_depth * 2 + 4))
         stop_reason = "completed"
 
         while turn_count < max_turns and not executor.is_finished:
@@ -207,7 +208,7 @@ class LiveAIInvestigator:
                 # Format OpenAI style assistant message
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
-                    "content": response.content or "",
+                    "content": response.content if response.content else None,
                     "tool_calls": [
                         {
                             "id": tc.call_id,
@@ -228,6 +229,12 @@ class LiveAIInvestigator:
                     turn_record.tool_calls.append(tc_record)
 
                     tool_result = executor.execute(tc.tool_name, tc.arguments)
+                    if turn_count >= max_turns - 2 and not executor.is_finished and isinstance(tool_result, dict):
+                        tool_result["_budget_notice"] = (
+                            f"Notice: Turn {turn_count}/{max_turns}. Turn budget is nearing exhaustion. "
+                            "Synthesize your evidence and call finish_investigation with any verified findings."
+                        )
+
                     turn_record.tool_results.append({
                         "call_id": tc.call_id,
                         "tool_name": tc.tool_name,
@@ -251,7 +258,15 @@ class LiveAIInvestigator:
                 # Text response without tools
                 messages.append({"role": "assistant", "content": response.content or ""})
                 # Prompt model to finalize or choose next action
-                if "finish" in (response.content or "").lower() or turn_count >= max_turns - 1:
+                content_lower = (response.content or "").lower()
+                is_ready_to_finish = (
+                    "ready to conclude" in content_lower
+                    or "conclude the investigation" in content_lower
+                    or "investigation is complete" in content_lower
+                    or "submit final findings" in content_lower
+                    or "conclude my investigation" in content_lower
+                )
+                if is_ready_to_finish or turn_count >= max_turns - 1:
                     messages.append({
                         "role": "user",
                         "content": (
@@ -266,6 +281,33 @@ class LiveAIInvestigator:
                     })
 
             trace.turns.append(turn_record)
+
+        # If turn limit reached without calling finish_investigation, allow one final wrap-up call
+        if not executor.is_finished and trace.status == "RUNNING":
+            try:
+                wrap_up_msg = {
+                    "role": "user",
+                    "content": (
+                        "Turn budget limit reached. Please call finish_investigation now to submit your final verified findings "
+                        "(with exact source code line citations), or conclude with empty findings if no vulnerability was confirmed."
+                    ),
+                }
+                messages.append(wrap_up_msg)
+                wrap_up_resp = await self.ai_provider.complete_with_tools(
+                    messages=messages,
+                    tools=[t for t in INVESTIGATION_TOOLS if t.name == "finish_investigation"],
+                    system_prompt=system_prompt,
+                )
+                if wrap_up_resp.tool_calls:
+                    for tc in wrap_up_resp.tool_calls:
+                        if tc.tool_name == "finish_investigation":
+                            executor.execute(tc.tool_name, tc.arguments)
+                            stop_reason = "finished_by_model"
+                            trace.status = "COMPLETED"
+                            trace.status_reason = "Model completed investigation and submitted findings on final turn."
+                            break
+            except Exception as wrap_err:
+                logger.warning("Wrap-up turn error: %s", wrap_err)
 
         if not executor.is_finished and trace.status == "RUNNING":
             stop_reason = "budget_exhausted"

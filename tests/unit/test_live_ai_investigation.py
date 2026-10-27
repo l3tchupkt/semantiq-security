@@ -54,6 +54,7 @@ def test_investigation_tools_schema_validity():
     names = {t.name for t in INVESTIGATION_TOOLS}
     expected = {
         "get_repository_overview",
+        "list_repository_files",
         "get_source_excerpt",
         "query_symbols",
         "query_callers_callees",
@@ -355,4 +356,75 @@ def test_authorization_boundary_authentication_vs_authorization(sample_repo: Pat
     assert res["authorization_enforced"] is False
     assert "CRITICAL AUTH DIVERGENCE" in res["security_assessment"]
     assert any("jwt.encode" in c for c in res["trust_boundary_crossings"])
+
+
+def test_finish_investigation_json_string_findings(sample_repo: Path) -> None:
+    """Verify finish_investigation gracefully handles models that pass findings as a JSON string."""
+    intelligence = RepositoryIntelligence(sample_repo)
+    intelligence.index_repository(["app/main.py", "app/service.py"])
+    graph = GraphBuilder(sample_repo).build(["app/main.py", "app/service.py"]).graph
+
+    executor = InvestigationToolExecutor(
+        repository_root=sample_repo,
+        intelligence=intelligence,
+        graph=graph,
+    )
+
+    json_string_findings = (
+        '[{"title": "Test Finding", "rule_id": "AI-001", "file_path": "app/service.py", '
+        '"start_line": 1, "end_line": 3, "summary": "Test summary", "category": "privilege_escalation", '
+        '"severity": "high", "attack_chain_steps": ["step 1", {"step": 2, "description": "step 2"}]}]'
+    )
+
+    res = executor.execute("finish_investigation", {
+        "summary": "Investigation completed.",
+        "findings": json_string_findings,
+    })
+
+    assert res["status"] == "success"
+    assert res["findings_submitted"] == 1
+    assert res["findings_validated"] == 1
+    assert len(executor.findings) == 1
+    assert executor.findings[0].file_path == "app/service.py"
+    assert len(executor.findings[0].attack_chain) == 2
+
+
+def test_list_repository_files_and_enhanced_overview(sample_repo: Path) -> None:
+    """Verify list_repository_files and get_repository_overview return file listings and key entry points."""
+    intelligence = RepositoryIntelligence(sample_repo)
+    intelligence.index_repository(["app/main.py", "app/service.py"])
+    graph = GraphBuilder(sample_repo).build(["app/main.py", "app/service.py"]).graph
+
+    executor = InvestigationToolExecutor(
+        repository_root=sample_repo,
+        intelligence=intelligence,
+        graph=graph,
+    )
+
+    # 1. Test get_repository_overview
+    overview = executor.execute("get_repository_overview", {})
+    assert overview["status"] == "success"
+    assert "app/main.py" in overview["repository_files"]
+    assert "app/service.py" in overview["repository_files"]
+    assert len(overview["key_entry_points"]) >= 1
+
+    # 2. Test list_repository_files
+    files_res = executor.execute("list_repository_files", {})
+    assert files_res["status"] == "success"
+    assert files_res["total_files"] == 2
+    assert "app/main.py" in files_res["files"]
+
+    # 3. Test list_repository_files with directory filter
+    dir_res = executor.execute("list_repository_files", {"directory": "app"})
+    assert dir_res["status"] == "success"
+    assert len(dir_res["files"]) == 2
+
+    # 4. Test query_symbols with 'def' and 'class'
+    def_res = executor.execute("query_symbols", {"query": "def"})
+    assert def_res["status"] == "success"
+    assert def_res["total_matches"] >= 2
+    matched_names = {m["name"] for m in def_res["matches"]}
+    assert "entry_route" in matched_names or "execute_privileged" in matched_names
+
+
 

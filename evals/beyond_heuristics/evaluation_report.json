@@ -1,28 +1,28 @@
 {
   "evaluation_name": "beyond_heuristics_multi_case",
-  "timestamp": "2026-10-27T16:01:20.087713+00:00",
-  "provider": "mock",
-  "model": "default",
+  "timestamp": "2026-10-27T19:29:09.610043+00:00",
+  "provider": "nvidia",
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "cases_evaluated": 2,
   "results": [
     {
       "case_id": "case_1_delegation_scope",
       "title": "Cross-Module Privilege Escalation via Unverified Delegation Scope",
-      "test_type": "scripted_workflow_test",
-      "provider": "mock",
-      "model": "scripted-workflow-agent",
-      "execution_mode": "mock",
+      "test_type": "live_discovery_test",
+      "provider": "nvidia",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "execution_mode": "live",
       "status": "COMPLETED",
       "status_reason": "Model completed investigation and submitted findings.",
       "deterministic_baseline": {
-        "duration_seconds": 0.18076379999911296,
+        "duration_seconds": 0.18153349999920465,
         "findings_count": 0,
         "discovered": false
       },
       "investigator_result": {
-        "duration_seconds": 0.0028674999994109385,
-        "turns_count": 7,
-        "tokens_used": 1450,
+        "duration_seconds": 76.25703330000033,
+        "turns_count": 17,
+        "tokens_used": 107442,
         "hypotheses_count": 1,
         "findings_count": 1,
         "citations_verified": true,
@@ -32,34 +32,34 @@
         "stop_reason": "finished_by_model",
         "findings": [
           {
-            "finding_id": "sqf_ai-discovery-auth-001_20",
-            "occurrence_id": "occ_ai-discovery-auth-001_20",
-            "rule_id": "AI-DISCOVERY-AUTH-001",
-            "title": "Vertical Privilege Escalation via Unchecked Delegation Scope",
-            "summary": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+            "finding_id": "sqf_ai-discovery-hyp_auth_01_21",
+            "occurrence_id": "occ_ai-discovery-hyp_auth_01_21",
+            "rule_id": "AI-DISCOVERY-hyp_auth_01",
+            "title": "Authorization Bypass in DelegationRouter.delegate_task - Missing Scope Check",
+            "summary": "The delegate_task method extracts caller_id and delegatee_id from request, but there is no check verifying that the caller possesses the requested_role_scope. The code even contains a comment marking this as a flaw. This allows any authenticated user to request a delegation token with 'admin' role scope. The token can then be used in execute_delegated to trigger admin-only operations in ExecutionEngine.run_privileged_task such as purge_all_audit_logs and override_system_configuration, which are dangerous administrative actions recorded in database/jobs.py.",
             "category": "generic",
-            "severity": "critical",
+            "severity": "high",
             "confidence": "high",
             "cwe_ids": [],
             "file_path": "api/delegation.py",
-            "start_line": 20,
-            "end_line": 35,
+            "start_line": 21,
+            "end_line": 43,
             "locations": [
               {
                 "file_path": "api/delegation.py",
-                "start_line": 20,
-                "end_line": 35,
+                "start_line": 21,
+                "end_line": 43,
                 "column": null,
-                "symbol": "/api/v1/delegation/delegate-task",
+                "symbol": "api/delegation.py::DelegationRouter.delegate_task",
                 "role": "sink"
               }
             ],
             "code_evidence": [
               {
-                "snippet": "    @require_auth\n    def delegate_task(self, request_data: dict[str, Any], current_user: dict[str, Any]) -> dict[str, Any]:\n        \"\"\"Allows worker to delegate subtask execution authority to another user or agent.\n\n        Request parameters:\n            delegatee_id: string ID of the recipient\n            requested_role_scope: role permission scope granted ('standard', 'analyst', 'admin')\n        \"\"\"\n        caller_id = current_user.get(\"user_id\", \"anonymous\")\n        delegatee_id = request_data.get(\"delegatee_id\", \"\")\n        requested_scope = request_data.get(\"requested_role_scope\", \"standard\")\n\n        # Flaw: No check verifying that caller possesses the requested_role_scope.\n        # Any authenticated user can issue delegation tokens granting 'admin' role scope.\n        token = coordinator.issue_delegation_token(\n            delegator_id=caller_id,",
-                "start_line": 20,
-                "end_line": 35,
-                "explanation": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+                "snippet": "    def delegate_task(self, request_data: dict[str, Any], current_user: dict[str, Any]) -> dict[str, Any]:\n        \"\"\"Allows worker to delegate subtask execution authority to another user or agent.\n\n        Request parameters:\n            delegatee_id: string ID of the recipient\n            requested_role_scope: role permission scope granted ('standard', 'analyst', 'admin')\n        \"\"\"\n        caller_id = current_user.get(\"user_id\", \"anonymous\")\n        delegatee_id = request_data.get(\"delegatee_id\", \"\")\n        requested_scope = request_data.get(\"requested_role_scope\", \"standard\")\n\n        # Flaw: No check verifying that caller possesses the requested_role_scope.\n        # Any authenticated user can issue delegation tokens granting 'admin' role scope.\n        token = coordinator.issue_delegation_token(\n            delegator_id=caller_id,\n            delegatee_id=delegatee_id,\n            requested_scope=requested_scope,\n        )\n        return {\n            \"status\": \"granted\",\n            \"delegation_token\": token,\n            \"granted_scope\": requested_scope,\n        }",
+                "start_line": 21,
+                "end_line": 43,
+                "explanation": "The delegate_task method extracts caller_id and delegatee_id from request, but there is no check verifying that the caller possesses the requested_role_scope. The code even contains a comment marking this as a flaw. This allows any authenticated user to request a delegation token with 'admin' role scope. The token can then be used in execute_delegated to trigger admin-only operations in ExecutionEngine.run_privileged_task such as purge_all_audit_logs and override_system_configuration, which are dangerous administrative actions recorded in database/jobs.py.",
                 "role": "sink"
               }
             ],
@@ -67,32 +67,42 @@
               {
                 "location": {
                   "file_path": "api/delegation.py",
-                  "start_line": 20,
-                  "end_line": 35,
+                  "start_line": 21,
+                  "end_line": 43,
                   "column": null,
-                  "symbol": "/api/v1/delegation/delegate-task",
+                  "symbol": "api/delegation.py::DelegationRouter.delegate_task",
                   "role": "sink"
                 },
-                "description": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+                "description": "The delegate_task method extracts caller_id and delegatee_id from request, but there is no check verifying that the caller possesses the requested_role_scope. The code even contains a comment marking this as a flaw. This allows any authenticated user to request a delegation token with 'admin' role scope. The token can then be used in execute_delegated to trigger admin-only operations in ExecutionEngine.run_privileged_task such as purge_all_audit_logs and override_system_configuration, which are dangerous administrative actions recorded in database/jobs.py.",
                 "transformation": null
               }
             ],
-            "impact": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
-            "prerequisites": [],
+            "impact": "The delegate_task method extracts caller_id and delegatee_id from request, but there is no check verifying that the caller possesses the requested_role_scope. The code even contains a comment marking this as a flaw. This allows any authenticated user to request a delegation token with 'admin' role scope. The token can then be used in execute_delegated to trigger admin-only operations in ExecutionEngine.run_privileged_task such as purge_all_audit_logs and override_system_configuration, which are dangerous administrative actions recorded in database/jobs.py.",
+            "prerequisites": [
+              "Caller can authenticate (require_auth decorator passes through without actual checks)",
+              "Caller supplies requested_role_scope='admin' in request_data"
+            ],
             "conditions_required": [],
             "sanitizers_considered": [],
             "counterevidence": [],
-            "supporting_evidence": [],
+            "supporting_evidence": [
+              "api/delegation.py lines 28-33: no scope verification, comment '# Flaw: No check verifying that caller possesses the requested_role_scope.'",
+              "services/task_coordinator.py lines 20-35: issue_delegation_token blindly uses requested_scope",
+              "services/execution_engine.py lines 20-26: admin role_scope enables purge_audit and override_config",
+              "database/jobs.py lines 20-28: purge_all_audit_logs and override_system_configuration are dangerous admin actions"
+            ],
             "attack_chain": [
-              "1. Authenticated user sends POST /api/v1/delegation/delegate-task with requested_role_scope='admin'",
-              "2. delegate_task forwards scope to issue_delegation_token without verifying caller authority",
-              "3. Signed delegation token grants admin access in execution_engine.py"
+              "1. Authenticate to the API (any credentials accepted due to require_auth pass-through).",
+              "2. Call delegate_task with requested_role_scope='admin' and any delegatee_id.",
+              "3. Receive a signed delegation token with role_scope=admin.",
+              "4. Call execute_delegated with a malicious action, e.g., {\"operation\":\"purge_audit\"}.",
+              "5. ExecutionEngine.run_privileged_task executes the admin operation, purging audit logs or overriding system configuration."
             ],
             "structured_attack_chain": {
-              "chain_id": "achain_ai-discovery-auth-001_20",
-              "title": "Attack Chain: Vertical Privilege Escalation via Unchecked Delegation Scope",
-              "starting_point": "/api/v1/delegation/delegate-task",
-              "target_operation": "Vertical Privilege Escalation via Unchecked Delegation Scope",
+              "chain_id": "achain_ai-discovery-hyp_auth_01_21",
+              "title": "Attack Chain: Authorization Bypass in DelegationRouter.delegate_task - Missing Scope Check",
+              "starting_point": "api/delegation.py::DelegationRouter.delegate_task",
+              "target_operation": "Authorization Bypass in DelegationRouter.delegate_task - Missing Scope Check",
               "attacker_capability": "unauthenticated_attacker",
               "preconditions": [],
               "steps": [
@@ -100,14 +110,14 @@
                   "step_number": 1,
                   "location": {
                     "file_path": "api/delegation.py",
-                    "start_line": 20,
-                    "end_line": 35,
+                    "start_line": 21,
+                    "end_line": 43,
                     "column": null,
-                    "symbol": "/api/v1/delegation/delegate-task",
+                    "symbol": "api/delegation.py::DelegationRouter.delegate_task",
                     "role": "sink"
                   },
                   "operation_type": "attack_step",
-                  "description": "1. Authenticated user sends POST /api/v1/delegation/delegate-task with requested_role_scope='admin'",
+                  "description": "1. Authenticate to the API (any credentials accepted due to require_auth pass-through).",
                   "actor_capability": "unauthenticated_attacker",
                   "trust_boundary_crossed": null,
                   "preconditions": [],
@@ -119,14 +129,14 @@
                   "step_number": 2,
                   "location": {
                     "file_path": "api/delegation.py",
-                    "start_line": 20,
-                    "end_line": 35,
+                    "start_line": 21,
+                    "end_line": 43,
                     "column": null,
-                    "symbol": "/api/v1/delegation/delegate-task",
+                    "symbol": "api/delegation.py::DelegationRouter.delegate_task",
                     "role": "sink"
                   },
                   "operation_type": "attack_step",
-                  "description": "2. delegate_task forwards scope to issue_delegation_token without verifying caller authority",
+                  "description": "2. Call delegate_task with requested_role_scope='admin' and any delegatee_id.",
                   "actor_capability": "unauthenticated_attacker",
                   "trust_boundary_crossed": null,
                   "preconditions": [],
@@ -138,14 +148,52 @@
                   "step_number": 3,
                   "location": {
                     "file_path": "api/delegation.py",
-                    "start_line": 20,
-                    "end_line": 35,
+                    "start_line": 21,
+                    "end_line": 43,
                     "column": null,
-                    "symbol": "/api/v1/delegation/delegate-task",
+                    "symbol": "api/delegation.py::DelegationRouter.delegate_task",
                     "role": "sink"
                   },
                   "operation_type": "attack_step",
-                  "description": "3. Signed delegation token grants admin access in execution_engine.py",
+                  "description": "3. Receive a signed delegation token with role_scope=admin.",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 4,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 21,
+                    "end_line": 43,
+                    "column": null,
+                    "symbol": "api/delegation.py::DelegationRouter.delegate_task",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "4. Call execute_delegated with a malicious action, e.g., {\"operation\":\"purge_audit\"}.",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 5,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 21,
+                    "end_line": 43,
+                    "column": null,
+                    "symbol": "api/delegation.py::DelegationRouter.delegate_task",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "5. ExecutionEngine.run_privileged_task executes the admin operation, purging audit logs or overriding system configuration.",
                   "actor_capability": "unauthenticated_attacker",
                   "trust_boundary_crossed": null,
                   "preconditions": [],
@@ -155,7 +203,7 @@
                 }
               ],
               "trust_boundaries": [],
-              "potential_impact": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+              "potential_impact": "The delegate_task method extracts caller_id and delegatee_id from request, but there is no check verifying that the caller possesses the requested_role_scope. The code even contains a comment marking this as a flaw. This allows any authenticated user to request a delegation token with 'admin' role scope. The token can then be used in execute_delegated to trigger admin-only operations in ExecutionEngine.run_privileged_task such as purge_all_audit_logs and override_system_configuration, which are dangerous administrative actions recorded in database/jobs.py.",
               "validation_requirements": [],
               "is_exploitable_estimate": true,
               "unresolved_factors": []
@@ -166,37 +214,188 @@
             "validation_result": null,
             "remediation": "",
             "remediation_patch": null,
-            "fingerprint": "semantiq/v1:sha256:4a8e521b28f4cefe026ac11c4c079cb8f6bf3eaefa45ba655490ec26488be28d",
+            "fingerprint": "semantiq/v1:sha256:7e7cda07293a11b456563abf9590db98a90cc344ad365f59d1986ccef3d99a58",
             "discovery_backend": "ai_live_investigator",
             "scan_id": "",
-            "created_at": "2026-10-27T16:01:19.581184+00:00",
+            "created_at": "2026-10-27T19:26:56.186738+00:00",
             "metadata": {}
           }
         ]
       },
       "safe_counterpart": {
         "status": "COMPLETED",
-        "false_positives_count": 0
+        "false_positives_count": 1,
+        "findings": [
+          {
+            "finding_id": "sqf_ai-discovery-001_53",
+            "occurrence_id": "occ_ai-discovery-001_53",
+            "rule_id": "AI-DISCOVERY-001",
+            "title": "Privilege escalation via delegation token admin scope",
+            "summary": "The execute_delegated method validates the delegation token signature but does not re\u2011check that the current_user holds the role_scope granted by the token. An attacker in possession of a valid admin\u2011scoped delegation token can invoke admin\u2011only operations (purge_all_audit_logs, override_system_configuration) bypassing role\u2011based access control.",
+            "category": "generic",
+            "severity": "high",
+            "confidence": "high",
+            "cwe_ids": [],
+            "file_path": "api/delegation.py",
+            "start_line": 53,
+            "end_line": 59,
+            "locations": [
+              {
+                "file_path": "api/delegation.py",
+                "start_line": 53,
+                "end_line": 59,
+                "column": null,
+                "symbol": "DelegationRouter.execute_delegated (api/delegation.py:53)",
+                "role": "sink"
+              }
+            ],
+            "code_evidence": [
+              {
+                "snippet": "    def execute_delegated(self, request_data: dict[str, Any], current_user: dict[str, Any]) -> dict[str, Any]:\n        \"\"\"Executes task operations authorized by delegation token.\"\"\"\n        token = request_data.get(\"delegation_token\", \"\")\n        action = request_data.get(\"action\", {})\n\n        result = coordinator.execute_delegated_task(token, action)\n        return result",
+                "start_line": 53,
+                "end_line": 59,
+                "explanation": "The execute_delegated method validates the delegation token signature but does not re\u2011check that the current_user holds the role_scope granted by the token. An attacker in possession of a valid admin\u2011scoped delegation token can invoke admin\u2011only operations (purge_all_audit_logs, override_system_configuration) bypassing role\u2011based access control.",
+                "role": "sink"
+              }
+            ],
+            "data_flow": [
+              {
+                "location": {
+                  "file_path": "api/delegation.py",
+                  "start_line": 53,
+                  "end_line": 59,
+                  "column": null,
+                  "symbol": "DelegationRouter.execute_delegated (api/delegation.py:53)",
+                  "role": "sink"
+                },
+                "description": "The execute_delegated method validates the delegation token signature but does not re\u2011check that the current_user holds the role_scope granted by the token. An attacker in possession of a valid admin\u2011scoped delegation token can invoke admin\u2011only operations (purge_all_audit_logs, override_system_configuration) bypassing role\u2011based access control.",
+                "transformation": null
+              }
+            ],
+            "impact": "The execute_delegated method validates the delegation token signature but does not re\u2011check that the current_user holds the role_scope granted by the token. An attacker in possession of a valid admin\u2011scoped delegation token can invoke admin\u2011only operations (purge_all_audit_logs, override_system_configuration) bypassing role\u2011based access control.",
+            "prerequisites": [
+              "Attacker obtains a valid delegation token with role_scope='admin' (e.g., from a legitimate admin delegation or via token forgery if SECRET_KEY is compromised).",
+              "Target endpoint is called with the token in request_data."
+            ],
+            "conditions_required": [],
+            "sanitizers_considered": [],
+            "counterevidence": [],
+            "supporting_evidence": [
+              "Token is signed with HMAC\u2011SHA256 (services/task_coordinator.py:20\u201135).",
+              "execute_delegated (api/delegation.py:53\u201159) extracts role_scope from token and passes it to ExecutionEngine.run_privileged_task.",
+              "ExecutionEngine.run_privileged_task (services/execution_engine.py:16\u201131) executes admin\u2011only actions when role_scope=='admin' without verifying the caller's actual roles.",
+              "_can_delegate_scope (api/delegation.py:20\u201125) only blocks admin\u2011scope delegation at issuance for non\u2011admin callers, but does not protect the execution path."
+            ],
+            "attack_chain": [
+              "1. Obtain a valid delegation token with role_scope='admin' (e.g., from a compromised admin user or via social engineering).",
+              "2. Call execute_delegated with the token and an admin\u2011type action (e.g., operation='purge_audit').",
+              "3. ExecutionEngine.run_privileged_task executes the privileged action because role_scope matches 'admin', ignoring the caller's real role."
+            ],
+            "structured_attack_chain": {
+              "chain_id": "achain_ai-discovery-001_53",
+              "title": "Attack Chain: Privilege escalation via delegation token admin scope",
+              "starting_point": "DelegationRouter.execute_delegated (api/delegation.py:53)",
+              "target_operation": "Privilege escalation via delegation token admin scope",
+              "attacker_capability": "unauthenticated_attacker",
+              "preconditions": [],
+              "steps": [
+                {
+                  "step_number": 1,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 53,
+                    "end_line": 59,
+                    "column": null,
+                    "symbol": "DelegationRouter.execute_delegated (api/delegation.py:53)",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "1. Obtain a valid delegation token with role_scope='admin' (e.g., from a compromised admin user or via social engineering).",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 2,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 53,
+                    "end_line": 59,
+                    "column": null,
+                    "symbol": "DelegationRouter.execute_delegated (api/delegation.py:53)",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "2. Call execute_delegated with the token and an admin\u2011type action (e.g., operation='purge_audit').",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 3,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 53,
+                    "end_line": 59,
+                    "column": null,
+                    "symbol": "DelegationRouter.execute_delegated (api/delegation.py:53)",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "3. ExecutionEngine.run_privileged_task executes the privileged action because role_scope matches 'admin', ignoring the caller's real role.",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                }
+              ],
+              "trust_boundaries": [],
+              "potential_impact": "The execute_delegated method validates the delegation token signature but does not re\u2011check that the current_user holds the role_scope granted by the token. An attacker in possession of a valid admin\u2011scoped delegation token can invoke admin\u2011only operations (purge_all_audit_logs, override_system_configuration) bypassing role\u2011based access control.",
+              "validation_requirements": [],
+              "is_exploitable_estimate": true,
+              "unresolved_factors": []
+            },
+            "hypothesis": null,
+            "uncertainty": "",
+            "validation_status": "evidence_supported",
+            "validation_result": null,
+            "remediation": "",
+            "remediation_patch": null,
+            "fingerprint": "semantiq/v1:sha256:cc61aa89619f3649081b90caa4cb8ba7defc1586508f994a236283875665c294",
+            "discovery_backend": "ai_live_investigator",
+            "scan_id": "",
+            "created_at": "2026-10-27T19:27:34.434341+00:00",
+            "metadata": {}
+          }
+        ]
       }
     },
     {
       "case_id": "case_2_reconciliation_race",
       "title": "Asynchronous Queue Double-Claim Invariant Violation",
-      "test_type": "scripted_workflow_test",
-      "provider": "mock",
-      "model": "scripted-workflow-agent",
-      "execution_mode": "mock",
+      "test_type": "live_discovery_test",
+      "provider": "nvidia",
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "execution_mode": "live",
       "status": "COMPLETED",
       "status_reason": "Model completed investigation and submitted findings.",
       "deterministic_baseline": {
-        "duration_seconds": 0.1359383999988495,
+        "duration_seconds": 0.16716210000231513,
         "findings_count": 0,
         "discovered": false
       },
       "investigator_result": {
-        "duration_seconds": 0.0015717999995104037,
-        "turns_count": 6,
-        "tokens_used": 1160,
+        "duration_seconds": 49.697028200000204,
+        "turns_count": 16,
+        "tokens_used": 90552,
         "hypotheses_count": 1,
         "findings_count": 1,
         "citations_verified": true,
@@ -206,34 +405,34 @@
         "stop_reason": "finished_by_model",
         "findings": [
           {
-            "finding_id": "sqf_ai-discovery-race-001_17",
-            "occurrence_id": "occ_ai-discovery-race-001_17",
-            "rule_id": "AI-DISCOVERY-RACE-001",
-            "title": "Asynchronous Refund Double-Claim Invariant Violation",
-            "summary": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+            "finding_id": "sqf_ai-discovery-001_18",
+            "occurrence_id": "occ_ai-discovery-001_18",
+            "rule_id": "AI-DISCOVERY-001",
+            "title": "Concurrent Refund Duplication via Race Condition in request_refund",
+            "summary": "The request_refund function (lines 18-35) does not atomically reserve or update order status before dispatching the refund job via dispatch_refund_job. Concurrent requests with the same order_id can each pass validation and enqueue separate jobs, resulting in duplicate external refunds and double spending. No lock, reservation, or idempotency mechanism is present in the order database, refund queue, worker, or payment gateway.",
             "category": "generic",
             "severity": "high",
             "confidence": "high",
             "cwe_ids": [],
             "file_path": "api/refunds.py",
-            "start_line": 17,
+            "start_line": 18,
             "end_line": 35,
             "locations": [
               {
                 "file_path": "api/refunds.py",
-                "start_line": 17,
+                "start_line": 18,
                 "end_line": 35,
                 "column": null,
-                "symbol": "request_refund",
+                "symbol": "api/refunds.py:request_refund",
                 "role": "sink"
               }
             ],
             "code_evidence": [
               {
-                "snippet": "def request_refund(order_id: str, caller_id: str, amount: float) -> dict[str, Any]:\n    \"\"\"Accept and enqueue a refund request.\n\n    VULNERABILITY: Does not establish an atomic lock or update order status to RESERVED\n    prior to queue dispatch, allowing concurrent requests to duplicate refunds.\n    \"\"\"\n    order = get_order_by_id(order_id)\n    if not order:\n        return {\"error\": \"Order not found\", \"status\": 404}\n\n    if order.get(\"user_id\") != caller_id:\n        return {\"error\": \"Unauthorized order access\", \"status\": 403}\n\n    if amount > order.get(\"amount\", 0.0):\n        return {\"error\": \"Amount exceeds order total\", \"status\": 400}\n\n    # Crosses trust boundary: asynchronous worker execution without atomic reservation\n    job_id = dispatch_refund_job(order_id=order_id, amount=amount, recipient=caller_id)\n    return {\"status\": \"accepted\", \"job_id\": job_id, \"state\": \"PENDING\"}",
-                "start_line": 17,
+                "snippet": "def request_refund(order_id: str, caller_id: str, amount: float) -> dict[str, Any]:\n    \"\"\"Accept and enqueue a refund request.\n\n    VULNERABILITY: Does not establish an atomic lock or update order status to RESERVED\n    prior to queue dispatch, allowing concurrent requests to duplicate refunds.\n    \"\"\"\n    order = get_order_by_id(order_id)\n    if not order:\n        return {\"error\": \"Order not found\", \"status\": 404}\n\n    if order.get(\"user_id\") != caller_id:\n        return {\"error\": \"Unauthorized order access\", \"status\": 403}\n\n    if amount > order.get(\"amount\", 0.0):\n        return {\"error\": \"Amount exceeds order total\", \"status\": 400}\n\n    # Crosses trust boundary: asynchronous worker execution without atomic reservation\n    job_id = dispatch_refund_job(order_id=order_id, amount=amount, recipient=caller_id)",
+                "start_line": 18,
                 "end_line": 35,
-                "explanation": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+                "explanation": "The request_refund function (lines 18-35) does not atomically reserve or update order status before dispatching the refund job via dispatch_refund_job. Concurrent requests with the same order_id can each pass validation and enqueue separate jobs, resulting in duplicate external refunds and double spending. No lock, reservation, or idempotency mechanism is present in the order database, refund queue, worker, or payment gateway.",
                 "role": "sink"
               }
             ],
@@ -241,32 +440,43 @@
               {
                 "location": {
                   "file_path": "api/refunds.py",
-                  "start_line": 17,
+                  "start_line": 18,
                   "end_line": 35,
                   "column": null,
-                  "symbol": "request_refund",
+                  "symbol": "api/refunds.py:request_refund",
                   "role": "sink"
                 },
-                "description": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+                "description": "The request_refund function (lines 18-35) does not atomically reserve or update order status before dispatching the refund job via dispatch_refund_job. Concurrent requests with the same order_id can each pass validation and enqueue separate jobs, resulting in duplicate external refunds and double spending. No lock, reservation, or idempotency mechanism is present in the order database, refund queue, worker, or payment gateway.",
                 "transformation": null
               }
             ],
-            "impact": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
-            "prerequisites": [],
+            "impact": "The request_refund function (lines 18-35) does not atomically reserve or update order status before dispatching the refund job via dispatch_refund_job. Concurrent requests with the same order_id can each pass validation and enqueue separate jobs, resulting in duplicate external refunds and double spending. No lock, reservation, or idempotency mechanism is present in the order database, refund queue, worker, or payment gateway.",
+            "prerequisites": [
+              "Multiple concurrent HTTP requests targeting the same order_id",
+              "Each request passes the amount and authorization checks",
+              "External payment gateway does not enforce idempotency independently"
+            ],
             "conditions_required": [],
             "sanitizers_considered": [],
             "counterevidence": [],
-            "supporting_evidence": [],
+            "supporting_evidence": [
+              "request_refund does not update order status to RESERVED before dispatching the job (line 34-35 of api/refunds.py)",
+              "Code comment on line 34: '# Crosses trust boundary: asynchronous worker execution without atomic reservation'",
+              "Authorization boundary analysis reports 'Enqueues asynchronous job without caller context re-validation' as a trust boundary crossing",
+              "No lock or reservation primitives found anywhere in the codebase"
+            ],
             "attack_chain": [
-              "1. Attacker sends concurrent POST requests to request_refund for the same order_id",
-              "2. Both requests pass validation because order status is not atomically reserved",
-              "3. Multiple jobs dispatched to refund_queue and executed by refund_worker against external payment gateway"
+              "1. Attacker sends a refund request for order_id with amount within order total and with a valid caller_id matching the order's user_id.",
+              "2. request_refund validates order existence, user authorization, and amount.",
+              "3. Before any status reservation, dispatch_refund_job enqueues a refund job into PENDING_QUEUE and returns acceptance.",
+              "4. A second concurrent request for the same order similarly passes validation and enqueues a second job.",
+              "5. The refund worker processes both jobs, executing execute_gateway_refund twice and recording two ledger deductions, resulting in a double refund."
             ],
             "structured_attack_chain": {
-              "chain_id": "achain_ai-discovery-race-001_17",
-              "title": "Attack Chain: Asynchronous Refund Double-Claim Invariant Violation",
-              "starting_point": "request_refund",
-              "target_operation": "Asynchronous Refund Double-Claim Invariant Violation",
+              "chain_id": "achain_ai-discovery-001_18",
+              "title": "Attack Chain: Concurrent Refund Duplication via Race Condition in request_refund",
+              "starting_point": "api/refunds.py:request_refund",
+              "target_operation": "Concurrent Refund Duplication via Race Condition in request_refund",
               "attacker_capability": "unauthenticated_attacker",
               "preconditions": [],
               "steps": [
@@ -274,14 +484,14 @@
                   "step_number": 1,
                   "location": {
                     "file_path": "api/refunds.py",
-                    "start_line": 17,
+                    "start_line": 18,
                     "end_line": 35,
                     "column": null,
-                    "symbol": "request_refund",
+                    "symbol": "api/refunds.py:request_refund",
                     "role": "sink"
                   },
                   "operation_type": "attack_step",
-                  "description": "1. Attacker sends concurrent POST requests to request_refund for the same order_id",
+                  "description": "1. Attacker sends a refund request for order_id with amount within order total and with a valid caller_id matching the order's user_id.",
                   "actor_capability": "unauthenticated_attacker",
                   "trust_boundary_crossed": null,
                   "preconditions": [],
@@ -293,14 +503,14 @@
                   "step_number": 2,
                   "location": {
                     "file_path": "api/refunds.py",
-                    "start_line": 17,
+                    "start_line": 18,
                     "end_line": 35,
                     "column": null,
-                    "symbol": "request_refund",
+                    "symbol": "api/refunds.py:request_refund",
                     "role": "sink"
                   },
                   "operation_type": "attack_step",
-                  "description": "2. Both requests pass validation because order status is not atomically reserved",
+                  "description": "2. request_refund validates order existence, user authorization, and amount.",
                   "actor_capability": "unauthenticated_attacker",
                   "trust_boundary_crossed": null,
                   "preconditions": [],
@@ -312,14 +522,52 @@
                   "step_number": 3,
                   "location": {
                     "file_path": "api/refunds.py",
-                    "start_line": 17,
+                    "start_line": 18,
                     "end_line": 35,
                     "column": null,
-                    "symbol": "request_refund",
+                    "symbol": "api/refunds.py:request_refund",
                     "role": "sink"
                   },
                   "operation_type": "attack_step",
-                  "description": "3. Multiple jobs dispatched to refund_queue and executed by refund_worker against external payment gateway",
+                  "description": "3. Before any status reservation, dispatch_refund_job enqueues a refund job into PENDING_QUEUE and returns acceptance.",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 4,
+                  "location": {
+                    "file_path": "api/refunds.py",
+                    "start_line": 18,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "api/refunds.py:request_refund",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "4. A second concurrent request for the same order similarly passes validation and enqueues a second job.",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 5,
+                  "location": {
+                    "file_path": "api/refunds.py",
+                    "start_line": 18,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "api/refunds.py:request_refund",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "5. The refund worker processes both jobs, executing execute_gateway_refund twice and recording two ledger deductions, resulting in a double refund.",
                   "actor_capability": "unauthenticated_attacker",
                   "trust_boundary_crossed": null,
                   "preconditions": [],
@@ -329,7 +577,7 @@
                 }
               ],
               "trust_boundaries": [],
-              "potential_impact": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+              "potential_impact": "The request_refund function (lines 18-35) does not atomically reserve or update order status before dispatching the refund job via dispatch_refund_job. Concurrent requests with the same order_id can each pass validation and enqueue separate jobs, resulting in duplicate external refunds and double spending. No lock, reservation, or idempotency mechanism is present in the order database, refund queue, worker, or payment gateway.",
               "validation_requirements": [],
               "is_exploitable_estimate": true,
               "unresolved_factors": []
@@ -340,17 +588,108 @@
             "validation_result": null,
             "remediation": "",
             "remediation_patch": null,
-            "fingerprint": "semantiq/v1:sha256:b4797dc7b634f7b7dc2561a5eec31433175a6be659f97ab16f2974f53e620c9f",
+            "fingerprint": "semantiq/v1:sha256:e51f51359209bb0a6d296d1e69df5b8196cc2d76a1dd6e475c00c95c7d41bded",
             "discovery_backend": "ai_live_investigator",
             "scan_id": "",
-            "created_at": "2026-10-27T16:01:19.966445+00:00",
+            "created_at": "2026-10-27T19:28:24.424628+00:00",
             "metadata": {}
           }
         ]
       },
       "safe_counterpart": {
         "status": "COMPLETED",
-        "false_positives_count": 0
+        "false_positives_count": 1,
+        "findings": [
+          {
+            "finding_id": "sqf_ai-discovery-hyp_auth_01_10",
+            "occurrence_id": "occ_ai-discovery-hyp_auth_01_10",
+            "rule_id": "AI-DISCOVERY-hyp_auth_01",
+            "title": "JWT authentication decorator is a no-op allowing caller_id spoofing",
+            "summary": "The jwt_required decorator (lines 10\u201114) does not validate any JWT token or inject the authenticated user identity. The request_refund function accepts caller_id as a parameter from the caller, so an attacker can supply any caller_id value. The subsequent authorization check at line 24 (`if order.get('user_id') != caller_id`) can be bypassed by spoofing caller_id to match the target order's user_id, resulting in unauthorized refund requests.",
+            "category": "generic",
+            "severity": "high",
+            "confidence": "medium",
+            "cwe_ids": [],
+            "file_path": "api/refunds.py",
+            "start_line": 10,
+            "end_line": 14,
+            "locations": [
+              {
+                "file_path": "api/refunds.py",
+                "start_line": 10,
+                "end_line": 14,
+                "column": null,
+                "symbol": "api/refunds.py::request_refund",
+                "role": "sink"
+              }
+            ],
+            "code_evidence": [
+              {
+                "snippet": "def jwt_required(func: Any) -> Any:\n    \"\"\"Simulate JWT authentication decorator.\"\"\"\n    def wrapper(*args: Any, **kwargs: Any) -> Any:\n        return func(*args, **kwargs)\n    return wrapper",
+                "start_line": 10,
+                "end_line": 14,
+                "explanation": "The jwt_required decorator (lines 10\u201114) does not validate any JWT token or inject the authenticated user identity. The request_refund function accepts caller_id as a parameter from the caller, so an attacker can supply any caller_id value. The subsequent authorization check at line 24 (`if order.get('user_id') != caller_id`) can be bypassed by spoofing caller_id to match the target order's user_id, resulting in unauthorized refund requests.",
+                "role": "sink"
+              }
+            ],
+            "data_flow": [
+              {
+                "location": {
+                  "file_path": "api/refunds.py",
+                  "start_line": 10,
+                  "end_line": 14,
+                  "column": null,
+                  "symbol": "api/refunds.py::request_refund",
+                  "role": "sink"
+                },
+                "description": "The jwt_required decorator (lines 10\u201114) does not validate any JWT token or inject the authenticated user identity. The request_refund function accepts caller_id as a parameter from the caller, so an attacker can supply any caller_id value. The subsequent authorization check at line 24 (`if order.get('user_id') != caller_id`) can be bypassed by spoofing caller_id to match the target order's user_id, resulting in unauthorized refund requests.",
+                "transformation": null
+              }
+            ],
+            "impact": "The jwt_required decorator (lines 10\u201114) does not validate any JWT token or inject the authenticated user identity. The request_refund function accepts caller_id as a parameter from the caller, so an attacker can supply any caller_id value. The subsequent authorization check at line 24 (`if order.get('user_id') != caller_id`) can be bypassed by spoofing caller_id to match the target order's user_id, resulting in unauthorized refund requests.",
+            "prerequisites": [
+              "Attacker can send HTTP requests to the request_refund endpoint",
+              "Attacker knows a valid order_id (or can enumerate orders)"
+            ],
+            "conditions_required": [],
+            "sanitizers_considered": [],
+            "counterevidence": [
+              "In a full framework the decorator might be augmented with token validation; however, within the provided code it is a plain wrapper",
+              "The order user_id check is present but can be circumvented via spoofed caller_id"
+            ],
+            "supporting_evidence": [
+              "jwt_required wrapper never inspects request headers or tokens",
+              "request_refund signature includes caller_id passed by caller",
+              "Authorization check at line 24 compares order user_id to caller_id"
+            ],
+            "attack_chain": [],
+            "structured_attack_chain": {
+              "chain_id": "achain_ai-discovery-hyp_auth_01_10",
+              "title": "Attack Chain: JWT authentication decorator is a no-op allowing caller_id spoofing",
+              "starting_point": "api/refunds.py::request_refund",
+              "target_operation": "JWT authentication decorator is a no-op allowing caller_id spoofing",
+              "attacker_capability": "unauthenticated_attacker",
+              "preconditions": [],
+              "steps": [],
+              "trust_boundaries": [],
+              "potential_impact": "The jwt_required decorator (lines 10\u201114) does not validate any JWT token or inject the authenticated user identity. The request_refund function accepts caller_id as a parameter from the caller, so an attacker can supply any caller_id value. The subsequent authorization check at line 24 (`if order.get('user_id') != caller_id`) can be bypassed by spoofing caller_id to match the target order's user_id, resulting in unauthorized refund requests.",
+              "validation_requirements": [],
+              "is_exploitable_estimate": true,
+              "unresolved_factors": []
+            },
+            "hypothesis": null,
+            "uncertainty": "",
+            "validation_status": "evidence_supported",
+            "validation_result": null,
+            "remediation": "",
+            "remediation_patch": null,
+            "fingerprint": "semantiq/v1:sha256:f529c2cbaa9419dbbcd03caba31236e2ceb17b006331627c645dbf7eacb1f667",
+            "discovery_backend": "ai_live_investigator",
+            "scan_id": "",
+            "created_at": "2026-10-27T19:29:09.609572+00:00",
+            "metadata": {}
+          }
+        ]
       }
     }
   ]

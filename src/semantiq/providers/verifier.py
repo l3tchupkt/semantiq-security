@@ -13,7 +13,15 @@ def verify_finding_citations(repository_root: Path, finding: Finding) -> tuple[b
     Returns:
         (is_valid, reason): True if verified against real repository files, False otherwise.
     """
-    file_path = repository_root / finding.file_path
+    clean_path = finding.file_path.strip().replace("\\", "/")
+    repo_str = str(repository_root).replace("\\", "/").rstrip("/")
+    if clean_path.startswith(repo_str):
+        clean_path = clean_path[len(repo_str):]
+    if clean_path.startswith("./"):
+        clean_path = clean_path[2:]
+    clean_path = clean_path.lstrip("/")
+
+    file_path = repository_root / clean_path
     if not file_path.exists() or not file_path.is_file():
         return False, f"Cited file does not exist in repository: {finding.file_path}"
 
