@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 import httpx
@@ -10,7 +11,12 @@ import httpx
 from semantiq.config import AIConfig
 from semantiq.exceptions import ProviderError, ProviderTimeoutError
 from semantiq.models import Finding, ThreatModel
-from semantiq.providers.base import BaseAIProvider
+from semantiq.providers.base import (
+    BaseAIProvider,
+    InvestigationToolCall,
+    ProviderToolResponse,
+    ToolDefinition,
+)
 
 
 class OllamaProvider(BaseAIProvider):
@@ -41,6 +47,71 @@ class OllamaProvider(BaseAIProvider):
             raise ProviderTimeoutError(f"Ollama request timed out: {error}") from error
         except httpx.RequestError as error:
             raise ProviderError(f"Could not connect to Ollama at {self.endpoint}: {error}") from error
+
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[ToolDefinition],
+        system_prompt: str | None = None,
+    ) -> ProviderToolResponse:
+        chat_endpoint = self.endpoint.replace("/api/generate", "/api/chat")
+        full_messages: list[dict[str, Any]] = []
+        if system_prompt:
+            full_messages.append({"role": "system", "content": system_prompt})
+        full_messages.extend(messages)
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": full_messages,
+            "stream": False,
+            "options": {"temperature": self.config.temperature},
+        }
+        if tools:
+            payload["tools"] = [t.to_openai_tool() for t in tools]
+
+        try:
+            async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
+                response = await client.post(chat_endpoint, json=payload)
+                if response.status_code >= 400:
+                    raise ProviderError(f"Ollama error {response.status_code}: {response.text}")
+                data = response.json()
+                msg = data.get("message", {})
+                content = msg.get("content")
+                tool_calls: list[InvestigationToolCall] = []
+                for tc in msg.get("tool_calls", []):
+                    fn = tc.get("function", {})
+                    call_id = tc.get("id", f"call_{uuid.uuid4().hex[:6]}")
+                    tool_name = fn.get("name", "")
+                    raw_args = fn.get("arguments", {})
+                    if isinstance(raw_args, str):
+                        try:
+                            args = json.loads(raw_args)
+                        except Exception:
+                            args = {"raw": raw_args}
+                    else:
+                        args = raw_args
+                    tool_calls.append(
+                        InvestigationToolCall(
+                            call_id=call_id,
+                            tool_name=tool_name,
+                            arguments=args if isinstance(args, dict) else {"value": args},
+                        )
+                    )
+
+                prompt_tokens = data.get("prompt_eval_count", 0)
+                eval_tokens = data.get("eval_count", 0)
+
+                return ProviderToolResponse(
+                    content=content,
+                    tool_calls=tool_calls,
+                    tokens_used=prompt_tokens + eval_tokens,
+                    finish_reason="tool_calls" if tool_calls else "stop",
+                    raw_response=data,
+                )
+        except httpx.TimeoutException as error:
+            raise ProviderTimeoutError(f"Ollama request timed out: {error}") from error
+        except httpx.RequestError as error:
+            raise ProviderError(f"Could not connect to Ollama at {chat_endpoint}: {error}") from error
 
     async def investigate_finding(
         self,

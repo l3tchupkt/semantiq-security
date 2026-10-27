@@ -69,7 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demonstration Fixtures & Tests Beyond Existing Rules:
   * Created `ecommerce_multistep_app` and `ecommerce_multistep_safe` fixtures representing multi-step order processing and fulfillment state machine bypass.
   * Unit tests in `tests/unit/test_ai_investigation_engine.py` (7 tests).
-  * Integration tests in `tests/integration/test_discovery_beyond_rules.py` (3 tests) demonstrating discovery of state machine bypass and 0 false positives on the secure counterpart.
-
-
-
+- Live Model-Driven Autonomous Investigation Engine (`LiveAIInvestigator`):
+  * Agentic multi-turn investigation loop where the configured model actively selects follow-up actions based on observations from previous tool results.
+  * Implemented 12 bounded semantic tools (`INVESTIGATION_TOOLS`, `InvestigationToolExecutor`): `get_repository_overview`, `get_source_excerpt`, `query_symbols`, `query_callers_callees`, `query_dataflow_path`, `query_route_reachability`, `query_authorization_boundary`, `query_alternate_entry_points`, `get_analysis_gaps`, `record_hypothesis`, `challenge_hypothesis`, and `finish_investigation`.
+  * Auditable investigation trace recording (`InvestigationTrace`, `InvestigationTurn`) capturing provider, model, execution mode (`live`, `mock`, `unconfigured`), turn requests, tool calls, token usage, budget status, and verified citations.
+  * Honest credential gating: missing API keys explicitly yield `NOT_RUN` status with clear explanation, never silently disguising mock execution as live discovery.
+- Structured Tool-Calling Provider Upgrades:
+  * Added `complete_with_tools` to `BaseAIProvider` and concrete implementations for `OpenAIProvider`, `AnthropicProvider`, `OllamaProvider`, and `MockAIProvider`.
+  * Added `ToolDefinition`, `InvestigationToolCall`, and `ProviderToolResponse` models.
+- Independent Beyond-Heuristics Evaluation Suite:
+  * Created realistic multi-file fixtures: `workflow_delegation_app` (vertical privilege escalation via scope delegation across 4 modules: API, task coordinator, execution engine, and database) and `workflow_delegation_safe` (secure counterpart enforcing delegation authority checks).
+  * Executable evaluation harness in `evals/beyond_heuristics/run_beyond_heuristics_eval.py` demonstrating deterministic scan misses the flaw (0 findings) while autonomous AI discovers the flaw with ground-truth citations and 0 false positives on safe counterpart.
+- Production-Codebase Readiness:
+  * Audited JavaScript/TypeScript structural regex frontend limitations and documented concrete architectural blockers (lexical closures, dynamic route mounting, and cross-file type flow).
+  * Enforced revision-aware persistent memory invalidation in `SQLiteStorage`.

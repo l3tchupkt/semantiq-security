@@ -2,7 +2,12 @@
 
 from semantiq.config import AIConfig
 from semantiq.providers.anthropic import AnthropicProvider
-from semantiq.providers.base import BaseAIProvider
+from semantiq.providers.base import (
+    BaseAIProvider,
+    InvestigationToolCall,
+    ProviderToolResponse,
+    ToolDefinition,
+)
 from semantiq.providers.mock import MockAIProvider
 from semantiq.providers.ollama import OllamaProvider
 from semantiq.providers.openai import OpenAIProvider
@@ -28,9 +33,12 @@ def get_ai_provider(config: AIConfig) -> BaseAIProvider:
 __all__ = [
     "AnthropicProvider",
     "BaseAIProvider",
+    "InvestigationToolCall",
     "MockAIProvider",
     "OllamaProvider",
     "OpenAIProvider",
+    "ProviderToolResponse",
+    "ToolDefinition",
     "get_ai_provider",
     "verify_finding_citations",
 ]

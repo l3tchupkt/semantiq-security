@@ -8,6 +8,7 @@ context retrieval, self-critique/counterevidence analysis, and persistent memory
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -28,6 +29,7 @@ from semantiq.models import (
     Finding,
     InvestigationHypothesis,
     InvestigationMemoryRecord,
+    InvestigationTrace,
     SeverityLevel,
     SourceLocation,
     ValidationStatus,
@@ -37,6 +39,8 @@ from semantiq.providers.base import BaseAIProvider
 from semantiq.providers.verifier import verify_finding_citations
 from semantiq.repository.intelligence import RepositoryIntelligence
 from semantiq.storage.sqlite import SQLiteStorage
+
+logger = logging.getLogger(__name__)
 
 
 class AIVulnerabilityInvestigator:
@@ -712,6 +716,19 @@ class AIVulnerabilityInvestigator:
             if valid:
                 findings.append(f)
 
+        # Optional live model-driven discovery loop if AI provider configured and enabled
+        if self.ai_provider and getattr(self.config, "ai_enabled", False):
+            try:
+                live_trace = self.run_live_investigation()
+                if live_trace.status == "COMPLETED":
+                    existing_fps = {x.calculate_fingerprint() for x in findings}
+                    for lf in live_trace.final_findings:
+                        if lf.calculate_fingerprint() not in existing_fps:
+                            findings.append(lf)
+                            existing_fps.add(lf.calculate_fingerprint())
+            except Exception as err:
+                logger.warning("Live AI investigation pass encountered error: %s", err)
+
         # Persist repository investigation memory
         if self.storage:
             mem_record = InvestigationMemoryRecord(
@@ -728,3 +745,19 @@ class AIVulnerabilityInvestigator:
             self.storage.save_repository_memory(mem_record)
 
         return findings
+
+    def run_live_investigation(self, prompt_hint: str | None = None) -> InvestigationTrace:
+        """Execute autonomous model-driven investigation loop with real provider adapters."""
+        from semantiq.discovery.live_investigator import LiveAIInvestigator
+
+        investigator = LiveAIInvestigator(
+            repository_root=self.repository_root,
+            intelligence=self.intelligence,
+            graph=self.graph,
+            ai_provider=self.ai_provider,
+            budget=self.budget,
+            storage=self.storage,
+            event_bus=self.event_bus,
+            source_revision=self.source_revision,
+        )
+        return investigator.investigate_sync(prompt_hint=prompt_hint)

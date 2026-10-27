@@ -18,6 +18,7 @@ from semantiq.graph.models import NodeKind
 from semantiq.models import (
     Finding,
     InvestigationHypothesis,
+    InvestigationTrace,
     PatchProposal,
     PatchVerificationResult,
     RepositoryInspection,
@@ -596,4 +597,37 @@ class Semantiq:
         """Discover multi-step cross-component attack chains from routes to sensitive operations."""
         graph = await self.get_semantic_graph(target)
         return graph.find_attack_chains(max_depth=max_depth)
+
+    async def investigate_repository_live(
+        self,
+        target: str | Path,
+        prompt_hint: str | None = None,
+        budget: Any = None,
+    ) -> InvestigationTrace:
+        """Run autonomous live AI-driven vulnerability investigation on target repository."""
+        target_path = Path(target).expanduser().resolve()
+        if not target_path.exists():
+            raise TargetNotFoundError(f"Target path does not exist: {target_path}")
+
+        inspector = RepositoryInspector(self.config.scan)
+        inspection = inspector.inspect(target_path)
+
+        from semantiq.repository.intelligence import RepositoryIntelligence
+
+        intelligence = RepositoryIntelligence(target_path)
+        intelligence.index_repository(inspection.in_scope_files)
+
+        from semantiq.discovery.live_investigator import LiveAIInvestigator
+
+        investigator = LiveAIInvestigator(
+            repository_root=target_path,
+            intelligence=intelligence,
+            ai_provider=self.ai_provider,
+            budget=budget,
+            storage=self.storage,
+            event_bus=self.event_bus,
+            source_revision=inspection.git_revision or "",
+            in_scope_files=inspection.in_scope_files,
+        )
+        return await investigator.investigate(prompt_hint=prompt_hint)
 

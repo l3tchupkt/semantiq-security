@@ -1,0 +1,33 @@
+{
+  "evaluation_name": "beyond_heuristics_delegation_scope",
+  "timestamp": "2026-10-27T15:22:00.623544+00:00",
+  "provider": "openai",
+  "model": "default",
+  "execution_mode": "unconfigured",
+  "status": "NOT_RUN",
+  "status_reason": "MISSING_API_KEY: Live provider credentials not configured in environment.",
+  "target_fixture": "E:\\Semantiq-Security\\semantiq-security\\tests\\fixtures\\workflow_delegation_app",
+  "safe_counterpart_fixture": "E:\\Semantiq-Security\\semantiq-security\\tests\\fixtures\\workflow_delegation_safe",
+  "deterministic_scan": {
+    "duration_seconds": 0.2226067999999941,
+    "findings_count": 0,
+    "discovered_flaw": false
+  },
+  "ai_investigation": {
+    "run_id": "ai_trace_a3432f7038",
+    "duration_seconds": 6.880000000819564e-05,
+    "turns_count": 0,
+    "tokens_used": 0,
+    "hypotheses_count": 0,
+    "findings_count": 0,
+    "discovered_flaw": false,
+    "citations_verified": true,
+    "stop_reason": "unconfigured_credentials",
+    "findings": [],
+    "turns_summary": []
+  },
+  "safe_counterpart_evaluation": {
+    "status": "NOT_RUN",
+    "false_positives_count": 0
+  }
+}

@@ -358,3 +358,37 @@ class ScanResult(BaseModel):
     completed_at: str
     coverage_summary: dict[str, Any] = Field(default_factory=dict)
     coverage: CoverageReport | None = None
+
+
+class InvestigationTurn(BaseModel):
+    """Single turn of AI model-driven investigation."""
+    turn_number: int
+    model_thoughts: str | None = None
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    tool_results: list[dict[str, Any]] = Field(default_factory=list)
+    tokens_used: int = 0
+    duration_seconds: float = 0.0
+
+
+class InvestigationTrace(BaseModel):
+    """Complete auditable record of an AI-driven investigation run."""
+    run_id: str
+    target_path: str = ""
+    source_revision: str = ""
+    started_at: str
+    completed_at: str = ""
+    provider: str
+    model: str
+    execution_mode: str  # "live", "mock", "unconfigured", "deterministic"
+    status: str  # "COMPLETED", "BUDGET_EXHAUSTED", "TIMEOUT", "NOT_RUN", "ERROR"
+    status_reason: str = ""
+    turns: list[InvestigationTurn] = Field(default_factory=list)
+    hypotheses_created: list[InvestigationHypothesis] = Field(default_factory=list)
+    hypotheses_revised: list[dict[str, Any]] = Field(default_factory=list)
+    hypotheses_rejected: list[dict[str, Any]] = Field(default_factory=list)
+    final_findings: list[Finding] = Field(default_factory=list)
+    total_tokens_used: int = 0
+    citations_verified: bool = True
+    stop_reason: str = "completed"
+    unresolved_uncertainty: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
