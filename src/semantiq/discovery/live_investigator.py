@@ -278,7 +278,11 @@ class LiveAIInvestigator:
         trace.total_tokens_used = sum(t.tokens_used for t in trace.turns)
         trace.hypotheses_created = list(executor.hypotheses.values())
         trace.final_findings = executor.findings
-        trace.citations_verified = all(f.validation_status != "inconclusive" for f in executor.findings)
+        trace.citations_verified = bool(
+            executor.findings
+            and not getattr(executor, "invalid_citations", [])
+            and all(f.validation_status != "inconclusive" for f in executor.findings)
+        )
 
         # Store in persistent memory if storage configured
         if self.storage and executor.hypotheses:

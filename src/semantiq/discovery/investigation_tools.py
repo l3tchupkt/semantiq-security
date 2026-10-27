@@ -51,18 +51,20 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
     ToolDefinition(
         name="get_source_excerpt",
         description=(
-            "Retrieve exact source code excerpt for a file between start_line and end_line with line numbers. "
-            "Use this to inspect implementations, verify data-flow propagation, check guards, or confirm citations."
+            "Retrieve exact source code excerpt for a file between start_line and end_line with line numbers, "
+            "or by function/symbol name. Use this to inspect implementations, verify data-flow propagation, check guards, "
+            "or confirm citations."
         ),
         parameters={
             "type": "object",
             "properties": {
                 "file_path": {"type": "string", "description": "Relative repository file path"},
-                "start_line": {"type": "integer", "description": "1-based starting line number"},
-                "end_line": {"type": "integer", "description": "1-based ending line number"},
+                "symbol": {"type": "string", "description": "Optional function, method, or class name to auto-locate"},
+                "start_line": {"type": "integer", "description": "1-based starting line number (optional if symbol provided)"},
+                "end_line": {"type": "integer", "description": "1-based ending line number (optional if symbol provided)"},
                 "max_lines": {"type": "integer", "description": "Maximum lines to retrieve (default: 50, max: 100)"},
             },
-            "required": ["file_path", "start_line", "end_line"],
+            "required": ["file_path"],
             "additionalProperties": False,
         },
     ),
@@ -291,6 +293,7 @@ class InvestigationToolExecutor:
         self.source_revision = source_revision
         self.hypotheses: dict[str, InvestigationHypothesis] = {}
         self.findings: list[Finding] = []
+        self.invalid_citations: list[dict[str, Any]] = []
         self.is_finished: bool = False
         self.finish_summary: str = ""
 
@@ -358,8 +361,44 @@ class InvestigationToolExecutor:
 
     def _tool_get_source_excerpt(self, args: dict[str, Any]) -> dict[str, Any]:
         file_path = args.get("file_path", "")
-        start_line = max(1, int(args.get("start_line", 1)))
-        end_line = max(start_line, int(args.get("end_line", start_line)))
+        symbol = args.get("symbol", "")
+
+        start_line_arg = args.get("start_line")
+        end_line_arg = args.get("end_line")
+
+        # If symbol provided without explicit start_line, auto-locate symbol lines
+        if symbol and (start_line_arg is None or (int(start_line_arg) == 1 and end_line_arg is None)):
+            resolved_start, resolved_end = None, None
+            for fpath, syms in self.intelligence.symbols.items():
+                if not file_path or file_path in fpath:
+                    for s in syms:
+                        if s.name.lower() == symbol.lower() or s.qualified_name.lower().endswith(symbol.lower()):
+                            file_path = fpath
+                            resolved_start = s.start_line
+                            resolved_end = s.end_line
+                            break
+                    if resolved_start is not None:
+                        break
+            if resolved_start is None:
+                for node in self.graph.nodes.values():
+                    if (not file_path or (node.file_path and file_path in node.file_path)) and (
+                        node.label.lower() == symbol.lower() or symbol.lower() in node.id.lower()
+                    ):
+                        if node.file_path:
+                            file_path = node.file_path
+                        resolved_start = node.start_line
+                        resolved_end = node.end_line
+                        break
+            if resolved_start is not None:
+                start_line = resolved_start
+                end_line = resolved_end or (resolved_start + 45)
+            else:
+                start_line = max(1, int(start_line_arg or 1))
+                end_line = max(start_line, int(end_line_arg or start_line + 45))
+        else:
+            start_line = max(1, int(start_line_arg or 1))
+            end_line = max(start_line, int(end_line_arg or start_line))
+
         max_lines = min(100, max(1, int(args.get("max_lines", 50))))
 
         try:
@@ -581,28 +620,143 @@ class InvestigationToolExecutor:
         }
 
     def _tool_query_authorization_boundary(self, args: dict[str, Any]) -> dict[str, Any]:
-        target = args.get("target", "")
+        target = args.get("target", "").strip()
 
-        # Look in intelligence auth boundaries
+        # 1. Search intelligence auth boundaries (route-level)
+        matching_boundary = None
         for b in self.intelligence.auth_boundaries:
             if target == b.route_path or target == b.handler_name or target in b.route_path:
-                return {
-                    "status": "success",
-                    "route_path": b.route_path,
-                    "handler_name": b.handler_name,
-                    "file_path": b.file_path,
-                    "line": b.line,
-                    "is_authenticated": b.is_authenticated,
-                    "auth_decorators": b.auth_decorators,
-                    "is_admin_only": b.is_admin_only,
-                    "is_tenant_scoped": b.is_tenant_scoped,
-                }
+                matching_boundary = b
+                break
+
+        # 2. Search symbols or graph nodes for function implementation
+        target_fpath = matching_boundary.file_path if matching_boundary else None
+        target_sline = matching_boundary.line if matching_boundary else None
+        target_eline = None
+        symbol_name = matching_boundary.handler_name if matching_boundary else target
+
+        if not target_fpath:
+            for fpath, syms in self.intelligence.symbols.items():
+                for s in syms:
+                    if target.lower() in s.name.lower() or target.lower() in s.qualified_name.lower():
+                        target_fpath = fpath
+                        target_sline = s.start_line
+                        target_eline = s.end_line
+                        symbol_name = s.name
+                        break
+                if target_fpath:
+                    break
+
+        if not target_fpath:
+            for node in self.graph.nodes.values():
+                if target.lower() in node.label.lower() or target.lower() in node.id.lower():
+                    target_fpath = node.file_path
+                    target_sline = node.start_line
+                    target_eline = node.end_line
+                    symbol_name = node.label
+                    break
+
+        # 3. Read function code if located to inspect inline authority & trust boundary semantics
+        code_snippet = ""
+        inline_auth_checks: list[str] = []
+        trust_boundary_crossings: list[str] = []
+        is_authenticated = bool(matching_boundary and matching_boundary.is_authenticated)
+        auth_decorators = list(matching_boundary.auth_decorators) if matching_boundary else []
+
+        if target_fpath and target_sline:
+            try:
+                full_p = resolve_safe_path(self.repository_root, target_fpath)
+                if full_p.is_file():
+                    lines = full_p.read_text(encoding="utf-8", errors="replace").splitlines()
+                    # Include preceding lines to capture decorators
+                    s_idx = max(0, target_sline - 6)
+                    e_idx = min(len(lines), target_eline or (target_sline + 60))
+                    code_snippet = "\n".join(lines[s_idx:e_idx])
+
+
+                    lower_code = code_snippet.lower()
+
+                    # Authentication keywords
+                    authn_terms = ["@login_required", "@jwt_required", "authenticated", "current_user", "get_current_user", "verify_token", "jwt.decode"]
+                    if any(k in lower_code for k in authn_terms):
+                        is_authenticated = True
+
+                    # Authorization / role / authority checks
+                    auth_keywords = [
+                        ("has_role", "Role check (has_role)"),
+                        ("is_admin", "Admin role check (is_admin)"),
+                        ("check_permission", "Permission verification (check_permission)"),
+                        ("has_permission", "Permission check (has_permission)"),
+                        ("verify_authority", "Caller authority verification"),
+                        ("allowed_roles", "Allowed roles whitelist"),
+                        ("scope in", "Scope inclusion check"),
+                        ("caller_scope", "Caller scope verification"),
+                        ("tenant_id ==", "Tenant isolation check"),
+                        ("user_id ==", "User ownership verification"),
+                        ("forbidden", "Explicit Forbidden denial"),
+                    ]
+                    for kw, desc in auth_keywords:
+                        if kw in lower_code:
+                            inline_auth_checks.append(desc)
+
+                    # Trust boundary crossings (queues, background workers, signed tokens, delegation)
+                    boundary_keywords = [
+                        ("jwt.encode", "jwt.encode: Signs security/delegation token without downstream authority re-verification"),
+                        ("issue_token", "Issues bearer/delegation token"),
+                        ("delegation", "Crosses delegation boundary"),
+                        ("queue.put", "Dispatches payload across asynchronous message queue"),
+                        ("enqueue", "Enqueues asynchronous job without caller context re-validation"),
+                        ("background_tasks", "Dispatches background worker task"),
+                        ("celery", "Dispatches Celery worker task"),
+                    ]
+                    for bkw, bdesc in boundary_keywords:
+                        if bkw in lower_code:
+                            trust_boundary_crossings.append(bdesc)
+            except Exception:
+                pass
+
+        if matching_boundary or target_fpath:
+            is_admin_only = bool(matching_boundary and matching_boundary.is_admin_only) or "is_admin" in code_snippet
+            is_tenant_scoped = bool(matching_boundary and matching_boundary.is_tenant_scoped) or "tenant_id" in code_snippet
+            has_authorization = bool(inline_auth_checks or is_admin_only or (matching_boundary and matching_boundary.auth_decorators and any("role" in d.lower() or "admin" in d.lower() for d in matching_boundary.auth_decorators)))
+
+            analysis_notes = []
+            if is_authenticated and not has_authorization:
+                analysis_notes.append(
+                    "CRITICAL AUTH DIVERGENCE: Authentication is verified (caller identity established), "
+                    "but AUTHORIZATION is unverified (caller authority over requested action/delegated scope is not enforced)."
+                )
+            elif not is_authenticated:
+                analysis_notes.append("Endpoint/function is unauthenticated (publicly callable).")
+            else:
+                analysis_notes.append("Both authentication and authorization checks detected.")
+
+            if trust_boundary_crossings:
+                analysis_notes.append(
+                    f"Trust boundaries crossed: {'; '.join(trust_boundary_crossings)}."
+                )
+
+            return {
+                "status": "success",
+                "target": target,
+                "symbol_name": symbol_name,
+                "file_path": target_fpath,
+                "line": target_sline,
+                "authentication_enforced": is_authenticated,
+                "auth_decorators": auth_decorators,
+                "authorization_enforced": has_authorization,
+                "inline_authority_checks": inline_auth_checks,
+                "is_admin_only": is_admin_only,
+                "is_tenant_scoped": is_tenant_scoped,
+                "trust_boundary_crossings": trust_boundary_crossings,
+                "security_assessment": " ".join(analysis_notes),
+            }
 
         return {
             "status": "unprotected_or_not_found",
             "target": target,
-            "message": f"No explicit authorization boundary or decorator detected for '{target}'.",
-            "note": "Handler may be publicly exposed or enforce authorization inline within its body.",
+            "message": f"No explicit authorization boundary or symbol definition detected for '{target}'.",
+            "note": "Target may be publicly exposed or dynamically dispatched.",
         }
 
     def _tool_query_alternate_entry_points(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -758,13 +912,19 @@ class InvestigationToolExecutor:
             # Build attack chain
             steps: list[AttackChainStep] = []
             raw_steps = rf.get("attack_chain_steps", [])
-            for idx, step_desc in enumerate(raw_steps, start=1):
+            for idx, step_item in enumerate(raw_steps, start=1):
+                if isinstance(step_item, dict):
+                    step_desc = str(step_item.get("description", step_item.get("action", str(step_item))))
+                    step_op = str(step_item.get("operation_type", "attack_step"))
+                else:
+                    step_desc = str(step_item)
+                    step_op = "attack_step"
                 steps.append(
                     AttackChainStep(
                         step_number=idx,
                         location=loc,
-                        operation_type="attack_step",
-                        description=str(step_desc),
+                        operation_type=step_op,
+                        description=step_desc,
                     )
                 )
 
@@ -810,6 +970,8 @@ class InvestigationToolExecutor:
                 self.findings.append(f)
             else:
                 invalid_citations.append({"finding_id": f.finding_id, "title": f.title, "reason": reason})
+
+        self.invalid_citations = invalid_citations
 
         return {
             "status": "success",

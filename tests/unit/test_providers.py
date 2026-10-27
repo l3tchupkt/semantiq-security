@@ -131,3 +131,88 @@ def test_verify_finding_citations(tmp_path: Path) -> None:
     is_valid_hal, reason_hal = verify_finding_citations(tmp_path, hallucinated_finding)
     assert not is_valid_hal
     assert "bounds" in reason_hal.lower() or "exceeds" in reason_hal.lower()
+
+
+def test_anthropic_multiturn_tool_payload_serialization() -> None:
+    """Verify Anthropic messages protocol groups tool_results and formats tool_use blocks."""
+    from unittest.mock import MagicMock, patch
+
+    from semantiq.discovery.investigation_tools import INVESTIGATION_TOOLS
+
+    captured_payloads: list[dict] = []
+
+    async def _mock_post(*args, **kwargs):
+        captured_payloads.append(kwargs.get("json", {}))
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "id": "msg_mock",
+            "content": [{"type": "text", "text": "Acknowledged."}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 50, "output_tokens": 10},
+        }
+        return mock_resp
+
+    async def _run():
+        cfg = AIConfig(enabled=True, provider="anthropic", api_key="sk-ant-mock-key")
+        provider = AnthropicProvider(config=cfg)
+
+        messages = [
+            {"role": "user", "content": "Investigate repo."},
+            {
+                "role": "assistant",
+                "content": "Running two checks.",
+                "tool_calls": [
+                    {
+                        "id": "call_01",
+                        "type": "function",
+                        "function": {"name": "query_symbols", "arguments": '{"query": "auth"}'},
+                    },
+                    {
+                        "id": "call_02",
+                        "type": "function",
+                        "function": {"name": "get_repository_overview", "arguments": "{}"},
+                    },
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_01", "content": '{"matches": []}'},
+            {"role": "tool", "tool_call_id": "call_02", "content": '{"routes": []}'},
+        ]
+
+        with patch("httpx.AsyncClient.post", new=_mock_post):
+            await provider.complete_with_tools(
+                messages=messages,
+                tools=INVESTIGATION_TOOLS[:2],
+                system_prompt="Test system prompt",
+            )
+
+        assert len(captured_payloads) == 1
+        payload = captured_payloads[0]
+        assert payload["system"] == "Test system prompt"
+        sent_messages = payload["messages"]
+
+        # Anthropic requires strict alternation: user -> assistant -> user
+        assert len(sent_messages) == 3
+        assert sent_messages[0]["role"] == "user"
+        assert sent_messages[1]["role"] == "assistant"
+        assert sent_messages[2]["role"] == "user"
+
+        # Verify assistant message has text and tool_use blocks
+        assistant_content = sent_messages[1]["content"]
+        assert len(assistant_content) == 3
+        assert assistant_content[0]["type"] == "text"
+        assert assistant_content[1]["type"] == "tool_use"
+        assert assistant_content[1]["id"] == "call_01"
+        assert assistant_content[2]["type"] == "tool_use"
+        assert assistant_content[2]["id"] == "call_02"
+
+        # Verify consecutive tool results are merged into a single user message with 2 tool_result blocks
+        tool_user_content = sent_messages[2]["content"]
+        assert len(tool_user_content) == 2
+        assert tool_user_content[0]["type"] == "tool_result"
+        assert tool_user_content[0]["tool_use_id"] == "call_01"
+        assert tool_user_content[1]["type"] == "tool_result"
+        assert tool_user_content[1]["tool_use_id"] == "call_02"
+
+    asyncio.run(_run())
+

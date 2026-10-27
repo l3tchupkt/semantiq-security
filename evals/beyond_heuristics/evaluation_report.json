@@ -1,33 +1,357 @@
 {
-  "evaluation_name": "beyond_heuristics_delegation_scope",
-  "timestamp": "2026-10-27T15:22:00.623544+00:00",
-  "provider": "openai",
+  "evaluation_name": "beyond_heuristics_multi_case",
+  "timestamp": "2026-10-27T16:01:20.087713+00:00",
+  "provider": "mock",
   "model": "default",
-  "execution_mode": "unconfigured",
-  "status": "NOT_RUN",
-  "status_reason": "MISSING_API_KEY: Live provider credentials not configured in environment.",
-  "target_fixture": "E:\\Semantiq-Security\\semantiq-security\\tests\\fixtures\\workflow_delegation_app",
-  "safe_counterpart_fixture": "E:\\Semantiq-Security\\semantiq-security\\tests\\fixtures\\workflow_delegation_safe",
-  "deterministic_scan": {
-    "duration_seconds": 0.2226067999999941,
-    "findings_count": 0,
-    "discovered_flaw": false
-  },
-  "ai_investigation": {
-    "run_id": "ai_trace_a3432f7038",
-    "duration_seconds": 6.880000000819564e-05,
-    "turns_count": 0,
-    "tokens_used": 0,
-    "hypotheses_count": 0,
-    "findings_count": 0,
-    "discovered_flaw": false,
-    "citations_verified": true,
-    "stop_reason": "unconfigured_credentials",
-    "findings": [],
-    "turns_summary": []
-  },
-  "safe_counterpart_evaluation": {
-    "status": "NOT_RUN",
-    "false_positives_count": 0
-  }
+  "cases_evaluated": 2,
+  "results": [
+    {
+      "case_id": "case_1_delegation_scope",
+      "title": "Cross-Module Privilege Escalation via Unverified Delegation Scope",
+      "test_type": "scripted_workflow_test",
+      "provider": "mock",
+      "model": "scripted-workflow-agent",
+      "execution_mode": "mock",
+      "status": "COMPLETED",
+      "status_reason": "Model completed investigation and submitted findings.",
+      "deterministic_baseline": {
+        "duration_seconds": 0.18076379999911296,
+        "findings_count": 0,
+        "discovered": false
+      },
+      "investigator_result": {
+        "duration_seconds": 0.0028674999994109385,
+        "turns_count": 7,
+        "tokens_used": 1450,
+        "hypotheses_count": 1,
+        "findings_count": 1,
+        "citations_verified": true,
+        "flaw_discovered": true,
+        "verified_location": true,
+        "invariant_described": true,
+        "stop_reason": "finished_by_model",
+        "findings": [
+          {
+            "finding_id": "sqf_ai-discovery-auth-001_20",
+            "occurrence_id": "occ_ai-discovery-auth-001_20",
+            "rule_id": "AI-DISCOVERY-AUTH-001",
+            "title": "Vertical Privilege Escalation via Unchecked Delegation Scope",
+            "summary": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+            "category": "generic",
+            "severity": "critical",
+            "confidence": "high",
+            "cwe_ids": [],
+            "file_path": "api/delegation.py",
+            "start_line": 20,
+            "end_line": 35,
+            "locations": [
+              {
+                "file_path": "api/delegation.py",
+                "start_line": 20,
+                "end_line": 35,
+                "column": null,
+                "symbol": "/api/v1/delegation/delegate-task",
+                "role": "sink"
+              }
+            ],
+            "code_evidence": [
+              {
+                "snippet": "    @require_auth\n    def delegate_task(self, request_data: dict[str, Any], current_user: dict[str, Any]) -> dict[str, Any]:\n        \"\"\"Allows worker to delegate subtask execution authority to another user or agent.\n\n        Request parameters:\n            delegatee_id: string ID of the recipient\n            requested_role_scope: role permission scope granted ('standard', 'analyst', 'admin')\n        \"\"\"\n        caller_id = current_user.get(\"user_id\", \"anonymous\")\n        delegatee_id = request_data.get(\"delegatee_id\", \"\")\n        requested_scope = request_data.get(\"requested_role_scope\", \"standard\")\n\n        # Flaw: No check verifying that caller possesses the requested_role_scope.\n        # Any authenticated user can issue delegation tokens granting 'admin' role scope.\n        token = coordinator.issue_delegation_token(\n            delegator_id=caller_id,",
+                "start_line": 20,
+                "end_line": 35,
+                "explanation": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+                "role": "sink"
+              }
+            ],
+            "data_flow": [
+              {
+                "location": {
+                  "file_path": "api/delegation.py",
+                  "start_line": 20,
+                  "end_line": 35,
+                  "column": null,
+                  "symbol": "/api/v1/delegation/delegate-task",
+                  "role": "sink"
+                },
+                "description": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+                "transformation": null
+              }
+            ],
+            "impact": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+            "prerequisites": [],
+            "conditions_required": [],
+            "sanitizers_considered": [],
+            "counterevidence": [],
+            "supporting_evidence": [],
+            "attack_chain": [
+              "1. Authenticated user sends POST /api/v1/delegation/delegate-task with requested_role_scope='admin'",
+              "2. delegate_task forwards scope to issue_delegation_token without verifying caller authority",
+              "3. Signed delegation token grants admin access in execution_engine.py"
+            ],
+            "structured_attack_chain": {
+              "chain_id": "achain_ai-discovery-auth-001_20",
+              "title": "Attack Chain: Vertical Privilege Escalation via Unchecked Delegation Scope",
+              "starting_point": "/api/v1/delegation/delegate-task",
+              "target_operation": "Vertical Privilege Escalation via Unchecked Delegation Scope",
+              "attacker_capability": "unauthenticated_attacker",
+              "preconditions": [],
+              "steps": [
+                {
+                  "step_number": 1,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 20,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "/api/v1/delegation/delegate-task",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "1. Authenticated user sends POST /api/v1/delegation/delegate-task with requested_role_scope='admin'",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 2,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 20,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "/api/v1/delegation/delegate-task",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "2. delegate_task forwards scope to issue_delegation_token without verifying caller authority",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 3,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 20,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "/api/v1/delegation/delegate-task",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "3. Signed delegation token grants admin access in execution_engine.py",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                }
+              ],
+              "trust_boundaries": [],
+              "potential_impact": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+              "validation_requirements": [],
+              "is_exploitable_estimate": true,
+              "unresolved_factors": []
+            },
+            "hypothesis": null,
+            "uncertainty": "",
+            "validation_status": "evidence_supported",
+            "validation_result": null,
+            "remediation": "",
+            "remediation_patch": null,
+            "fingerprint": "semantiq/v1:sha256:4a8e521b28f4cefe026ac11c4c079cb8f6bf3eaefa45ba655490ec26488be28d",
+            "discovery_backend": "ai_live_investigator",
+            "scan_id": "",
+            "created_at": "2026-10-27T16:01:19.581184+00:00",
+            "metadata": {}
+          }
+        ]
+      },
+      "safe_counterpart": {
+        "status": "COMPLETED",
+        "false_positives_count": 0
+      }
+    },
+    {
+      "case_id": "case_2_reconciliation_race",
+      "title": "Asynchronous Queue Double-Claim Invariant Violation",
+      "test_type": "scripted_workflow_test",
+      "provider": "mock",
+      "model": "scripted-workflow-agent",
+      "execution_mode": "mock",
+      "status": "COMPLETED",
+      "status_reason": "Model completed investigation and submitted findings.",
+      "deterministic_baseline": {
+        "duration_seconds": 0.1359383999988495,
+        "findings_count": 0,
+        "discovered": false
+      },
+      "investigator_result": {
+        "duration_seconds": 0.0015717999995104037,
+        "turns_count": 6,
+        "tokens_used": 1160,
+        "hypotheses_count": 1,
+        "findings_count": 1,
+        "citations_verified": true,
+        "flaw_discovered": true,
+        "verified_location": true,
+        "invariant_described": true,
+        "stop_reason": "finished_by_model",
+        "findings": [
+          {
+            "finding_id": "sqf_ai-discovery-race-001_17",
+            "occurrence_id": "occ_ai-discovery-race-001_17",
+            "rule_id": "AI-DISCOVERY-RACE-001",
+            "title": "Asynchronous Refund Double-Claim Invariant Violation",
+            "summary": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+            "category": "generic",
+            "severity": "high",
+            "confidence": "high",
+            "cwe_ids": [],
+            "file_path": "api/refunds.py",
+            "start_line": 17,
+            "end_line": 35,
+            "locations": [
+              {
+                "file_path": "api/refunds.py",
+                "start_line": 17,
+                "end_line": 35,
+                "column": null,
+                "symbol": "request_refund",
+                "role": "sink"
+              }
+            ],
+            "code_evidence": [
+              {
+                "snippet": "def request_refund(order_id: str, caller_id: str, amount: float) -> dict[str, Any]:\n    \"\"\"Accept and enqueue a refund request.\n\n    VULNERABILITY: Does not establish an atomic lock or update order status to RESERVED\n    prior to queue dispatch, allowing concurrent requests to duplicate refunds.\n    \"\"\"\n    order = get_order_by_id(order_id)\n    if not order:\n        return {\"error\": \"Order not found\", \"status\": 404}\n\n    if order.get(\"user_id\") != caller_id:\n        return {\"error\": \"Unauthorized order access\", \"status\": 403}\n\n    if amount > order.get(\"amount\", 0.0):\n        return {\"error\": \"Amount exceeds order total\", \"status\": 400}\n\n    # Crosses trust boundary: asynchronous worker execution without atomic reservation\n    job_id = dispatch_refund_job(order_id=order_id, amount=amount, recipient=caller_id)\n    return {\"status\": \"accepted\", \"job_id\": job_id, \"state\": \"PENDING\"}",
+                "start_line": 17,
+                "end_line": 35,
+                "explanation": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+                "role": "sink"
+              }
+            ],
+            "data_flow": [
+              {
+                "location": {
+                  "file_path": "api/refunds.py",
+                  "start_line": 17,
+                  "end_line": 35,
+                  "column": null,
+                  "symbol": "request_refund",
+                  "role": "sink"
+                },
+                "description": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+                "transformation": null
+              }
+            ],
+            "impact": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+            "prerequisites": [],
+            "conditions_required": [],
+            "sanitizers_considered": [],
+            "counterevidence": [],
+            "supporting_evidence": [],
+            "attack_chain": [
+              "1. Attacker sends concurrent POST requests to request_refund for the same order_id",
+              "2. Both requests pass validation because order status is not atomically reserved",
+              "3. Multiple jobs dispatched to refund_queue and executed by refund_worker against external payment gateway"
+            ],
+            "structured_attack_chain": {
+              "chain_id": "achain_ai-discovery-race-001_17",
+              "title": "Attack Chain: Asynchronous Refund Double-Claim Invariant Violation",
+              "starting_point": "request_refund",
+              "target_operation": "Asynchronous Refund Double-Claim Invariant Violation",
+              "attacker_capability": "unauthenticated_attacker",
+              "preconditions": [],
+              "steps": [
+                {
+                  "step_number": 1,
+                  "location": {
+                    "file_path": "api/refunds.py",
+                    "start_line": 17,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "request_refund",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "1. Attacker sends concurrent POST requests to request_refund for the same order_id",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 2,
+                  "location": {
+                    "file_path": "api/refunds.py",
+                    "start_line": 17,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "request_refund",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "2. Both requests pass validation because order status is not atomically reserved",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 3,
+                  "location": {
+                    "file_path": "api/refunds.py",
+                    "start_line": 17,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "request_refund",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "3. Multiple jobs dispatched to refund_queue and executed by refund_worker against external payment gateway",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                }
+              ],
+              "trust_boundaries": [],
+              "potential_impact": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+              "validation_requirements": [],
+              "is_exploitable_estimate": true,
+              "unresolved_factors": []
+            },
+            "hypothesis": null,
+            "uncertainty": "",
+            "validation_status": "evidence_supported",
+            "validation_result": null,
+            "remediation": "",
+            "remediation_patch": null,
+            "fingerprint": "semantiq/v1:sha256:b4797dc7b634f7b7dc2561a5eec31433175a6be659f97ab16f2974f53e620c9f",
+            "discovery_backend": "ai_live_investigator",
+            "scan_id": "",
+            "created_at": "2026-10-27T16:01:19.966445+00:00",
+            "metadata": {}
+          }
+        ]
+      },
+      "safe_counterpart": {
+        "status": "COMPLETED",
+        "false_positives_count": 0
+      }
+    }
+  ]
 }

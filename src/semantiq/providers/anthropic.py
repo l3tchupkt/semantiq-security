@@ -86,18 +86,52 @@ class AnthropicProvider(BaseAIProvider):
         for msg in messages:
             role = msg.get("role")
             if role == "tool":
-                anthropic_messages.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": msg.get("tool_call_id", ""),
-                            "content": str(msg.get("content", "")),
-                        }
-                    ],
-                })
-            elif role in ("user", "assistant"):
+                tool_block = {
+                    "type": "tool_result",
+                    "tool_use_id": msg.get("tool_call_id", ""),
+                    "content": str(msg.get("content", "")),
+                }
+                if (
+                    anthropic_messages
+                    and anthropic_messages[-1].get("role") == "user"
+                    and isinstance(anthropic_messages[-1].get("content"), list)
+                    and any(c.get("type") == "tool_result" for c in anthropic_messages[-1]["content"])
+                ):
+                    anthropic_messages[-1]["content"].append(tool_block)
+                else:
+                    anthropic_messages.append({
+                        "role": "user",
+                        "content": [tool_block],
+                    })
+            elif role == "assistant":
+                content_blocks: list[dict[str, Any]] = []
+                text_content = msg.get("content")
+                if text_content:
+                    content_blocks.append({"type": "text", "text": str(text_content)})
+                for tc in msg.get("tool_calls", []):
+                    fn = tc.get("function", {})
+                    raw_args = fn.get("arguments", "{}")
+                    if isinstance(raw_args, str):
+                        try:
+                            args_dict = json.loads(raw_args)
+                        except Exception:
+                            args_dict = {"raw": raw_args}
+                    elif isinstance(raw_args, dict):
+                        args_dict = raw_args
+                    else:
+                        args_dict = {"value": raw_args}
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", f"call_{uuid.uuid4().hex[:6]}"),
+                        "name": fn.get("name", ""),
+                        "input": args_dict,
+                    })
+                if not content_blocks:
+                    content_blocks.append({"type": "text", "text": ""})
+                anthropic_messages.append({"role": "assistant", "content": content_blocks})
+            elif role == "user":
                 anthropic_messages.append({"role": role, "content": msg.get("content", "")})
+
 
         payload: dict[str, Any] = {
             "model": self.model,

@@ -388,7 +388,8 @@ class InvestigationTrace(BaseModel):
     hypotheses_rejected: list[dict[str, Any]] = Field(default_factory=list)
     final_findings: list[Finding] = Field(default_factory=list)
     total_tokens_used: int = 0
-    citations_verified: bool = True
+    citations_verified: bool = False
     stop_reason: str = "completed"
+
     unresolved_uncertainty: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

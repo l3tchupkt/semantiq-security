@@ -54,7 +54,13 @@ class OllamaProvider(BaseAIProvider):
         tools: list[ToolDefinition],
         system_prompt: str | None = None,
     ) -> ProviderToolResponse:
-        chat_endpoint = self.endpoint.replace("/api/generate", "/api/chat")
+        if self.endpoint.endswith("/api/generate"):
+            chat_endpoint = self.endpoint[:-len("/api/generate")] + "/api/chat"
+        elif self.endpoint.endswith("/api/chat"):
+            chat_endpoint = self.endpoint
+        else:
+            chat_endpoint = self.endpoint.rstrip("/") + "/api/chat"
+
         full_messages: list[dict[str, Any]] = []
         if system_prompt:
             full_messages.append({"role": "system", "content": system_prompt})

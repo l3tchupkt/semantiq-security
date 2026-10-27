@@ -308,3 +308,51 @@ def test_client_investigate_repository_live(sample_repo: Path):
     assert isinstance(trace, InvestigationTrace)
     assert trace.execution_mode == "mock"
     assert trace.target_path == str(sample_repo.resolve())
+
+
+def test_symbol_based_source_excerpt(sample_repo: Path) -> None:
+    """Verify get_source_excerpt resolves line numbers automatically when symbol is specified."""
+    intelligence = RepositoryIntelligence(sample_repo)
+    intelligence.index_repository(["app/main.py", "app/service.py"])
+    graph = GraphBuilder(sample_repo).build(["app/main.py", "app/service.py"]).graph
+
+    executor = InvestigationToolExecutor(
+        repository_root=sample_repo,
+        intelligence=intelligence,
+        graph=graph,
+    )
+
+    res = executor.execute("get_source_excerpt", {"file_path": "app/service.py", "symbol": "execute_privileged"})
+    assert res["status"] == "success"
+    assert "execute_privileged" in res["snippet"]
+    assert res["start_line"] >= 1
+
+
+def test_authorization_boundary_authentication_vs_authorization(sample_repo: Path) -> None:
+    """Verify query_authorization_boundary distinguishes authentication from caller authority."""
+    auth_file = sample_repo / "app" / "auth_test.py"
+    auth_file.write_text(
+        "@jwt_required\n"
+        "def delegate_scope(requested_role: str):\n"
+        "    token = jwt.encode({'role': requested_role})\n"
+        "    return token\n",
+        encoding="utf-8",
+    )
+
+    intelligence = RepositoryIntelligence(sample_repo)
+    intelligence.index_repository(["app/main.py", "app/service.py", "app/auth_test.py"])
+    graph = GraphBuilder(sample_repo).build(["app/main.py", "app/service.py", "app/auth_test.py"]).graph
+
+    executor = InvestigationToolExecutor(
+        repository_root=sample_repo,
+        intelligence=intelligence,
+        graph=graph,
+    )
+
+    res = executor.execute("query_authorization_boundary", {"target": "delegate_scope"})
+    assert res["status"] == "success"
+    assert res["authentication_enforced"] is True
+    assert res["authorization_enforced"] is False
+    assert "CRITICAL AUTH DIVERGENCE" in res["security_assessment"]
+    assert any("jwt.encode" in c for c in res["trust_boundary_crossings"])
+

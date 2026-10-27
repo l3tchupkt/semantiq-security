@@ -1,8 +1,16 @@
 """Independent Beyond-Heuristics Autonomous AI Vulnerability Discovery Evaluation.
 
-Evaluates autonomous AI investigation against a multi-component application with a non-trivial
-authorization delegation flaw that is completely undetected by existing static rules and
-deterministic discovery heuristics.
+Evaluates autonomous AI investigation against multi-component applications with deep,
+cross-module invariant violations that are completely undetected by existing static rules
+and deterministic discovery heuristics.
+
+Audit Requirements:
+1. Ground truth is isolated separately and never leaked into model prompts.
+2. Neutral investigation prompts are used without revealing vulnerability names, files, or lines.
+3. Deterministic baseline and AI investigator results are independently recorded.
+4. Mock provider runs are explicitly designated as 'scripted_workflow_test', not live discovery.
+5. Missing provider credentials produce honest 'NOT_RUN' records without falling back to mock scripts.
+6. Evaluates both Case 1 (Delegation Scope Privilege Escalation) and Case 2 (Asynchronous Queue Invariant Race).
 """
 # ruff: noqa: E402
 
@@ -33,6 +41,58 @@ from semantiq.providers.openai import OpenAIProvider
 from semantiq.repository.inspector import RepositoryInspector
 from semantiq.repository.intelligence import RepositoryIntelligence
 
+# ==============================================================================
+# ISOLATED GROUND TRUTH SPECIFICATION (NEVER LEAKED TO INVESTIGATOR PROMPT)
+# ==============================================================================
+GROUND_TRUTH_CASES: dict[str, dict[str, Any]] = {
+    "case_1_delegation_scope": {
+        "case_id": "case_1_delegation_scope",
+        "title": "Cross-Module Privilege Escalation via Unverified Delegation Scope",
+        "vulnerable_fixture": REPO_ROOT / "tests" / "fixtures" / "workflow_delegation_app",
+        "safe_fixture": REPO_ROOT / "tests" / "fixtures" / "workflow_delegation_safe",
+        "primary_flaw_file": "api/delegation.py",
+        "affected_modules": [
+            "api/delegation.py",
+            "services/task_coordinator.py",
+            "services/execution_engine.py",
+        ],
+        "invariant_violation": (
+            "Caller with low-privilege token is permitted to delegate arbitrary role scope ('admin') "
+            "without verifying caller authority, resulting in vertical privilege escalation."
+        ),
+        "mitigation_module": "database/jobs.py",
+        "expected_category": "privilege_escalation",
+    },
+    "case_2_reconciliation_race": {
+        "case_id": "case_2_reconciliation_race",
+        "title": "Asynchronous Queue Double-Claim Invariant Violation",
+        "vulnerable_fixture": REPO_ROOT / "tests" / "fixtures" / "billing_reconciliation_app",
+        "safe_fixture": REPO_ROOT / "tests" / "fixtures" / "billing_reconciliation_safe",
+        "primary_flaw_file": "api/refunds.py",
+        "affected_modules": [
+            "api/refunds.py",
+            "services/refund_queue.py",
+            "workers/refund_worker.py",
+            "services/payment_gateway.py",
+            "models/ledger.py",
+        ],
+        "invariant_violation": (
+            "Concurrent refund requests accepted and enqueued without atomic state reservation/lock; "
+            "asynchronous worker triggers external payment gateway refunds prior to ledger deduction, "
+            "enabling duplicate payouts."
+        ),
+        "mitigation_module": "database/orders.py",
+        "expected_category": "business_logic_race",
+    },
+}
+
+NEUTRAL_INVESTIGATION_PROMPT = (
+    "Perform an autonomous security investigation of this repository. "
+    "Explore architecture, discover entry points, inspect implementation code, "
+    "trace untrusted data flows and privilege claims across modules, search for counterevidence "
+    "or mitigating controls, and report verified findings with exact source code citations."
+)
+
 
 def run_deterministic_scan(target_path: Path) -> list[dict[str, Any]]:
     """Execute the existing deterministic discovery engine (AST rules + regex + architectural orchestrator)."""
@@ -55,78 +115,69 @@ def run_deterministic_scan(target_path: Path) -> list[dict[str, Any]]:
     return [f.model_dump() for f in final_findings]
 
 
-def create_simulated_ai_tool_script() -> list[ProviderToolResponse]:
-    """Provides a realistic scripted multi-turn tool sequence for offline evaluation.
-
-    Simulates an intelligent model exploring the codebase:
-    Turn 1: Overview
-    Turn 2: Inspects delegation route and gets source excerpt
-    Turn 3: Follows callers to task coordinator and execution engine
-    Turn 4: Records hypothesis of privilege escalation via scope delegation
-    Turn 5: Checks for mitigating authority checks, confirms absence
-    Turn 6: Finalizes verified finding with exact source citations
-    """
+def create_simulated_case1_tool_script() -> list[ProviderToolResponse]:
+    """Provides a scripted multi-turn tool sequence for Case 1 (Workflow Delegation)."""
     return [
-        # Turn 1: Discover entry points
         ProviderToolResponse(
-            content="I will begin by inspecting the repository architecture, entry points, and security boundaries.",
+            content="Starting architectural discovery to map out routes and handlers.",
             tool_calls=[
                 InvestigationToolCall(
-                    call_id="call_01_overview",
+                    call_id="c1_call_01",
                     tool_name="get_repository_overview",
                     arguments={},
                 )
             ],
-            tokens_used=120,
+            tokens_used=110,
             finish_reason="tool_calls",
         ),
-        # Turn 2: Inspect delegation route handler
         ProviderToolResponse(
-            content="Examining the delegation entry point in api/delegation.py to understand how parameters are handled.",
+            content="Inspecting entry route api/delegation.py for parameter handling.",
             tool_calls=[
                 InvestigationToolCall(
-                    call_id="call_02_excerpt",
+                    call_id="c1_call_02",
                     tool_name="get_source_excerpt",
-                    arguments={
-                        "file_path": "api/delegation.py",
-                        "start_line": 15,
-                        "end_line": 45,
-                    },
+                    arguments={"file_path": "api/delegation.py", "start_line": 15, "end_line": 45},
                 )
             ],
-            tokens_used=180,
+            tokens_used=170,
             finish_reason="tool_calls",
         ),
-        # Turn 3: Follow interprocedural flow into task coordinator
         ProviderToolResponse(
-            content="Following interprocedural flow: delegate_task calls issue_delegation_token. Inspecting services/task_coordinator.py.",
+            content="Checking authorization boundary for delegate_task.",
             tool_calls=[
                 InvestigationToolCall(
-                    call_id="call_03_excerpt",
-                    tool_name="get_source_excerpt",
-                    arguments={
-                        "file_path": "services/task_coordinator.py",
-                        "start_line": 20,
-                        "end_line": 55,
-                    },
+                    call_id="c1_call_03",
+                    tool_name="query_authorization_boundary",
+                    arguments={"target": "delegate_task"},
                 )
             ],
-            tokens_used=210,
+            tokens_used=190,
             finish_reason="tool_calls",
         ),
-        # Turn 4: Formulate vulnerability hypothesis
         ProviderToolResponse(
-            content="Formulating hypothesis: The delegation endpoint allows callers to delegate arbitrary role scopes ('admin') without verifying that the caller possesses that scope.",
+            content="Tracing caller authority into services/task_coordinator.py.",
             tool_calls=[
                 InvestigationToolCall(
-                    call_id="call_04_record",
+                    call_id="c1_call_04",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "services/task_coordinator.py", "start_line": 20, "end_line": 55},
+                )
+            ],
+            tokens_used=220,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Formulating hypothesis on arbitrary delegation scope escalation.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c1_call_05",
                     tool_name="record_hypothesis",
                     arguments={
-                        "hypothesis_id": "hyp_delegation_priv_esc_01",
+                        "hypothesis_id": "hyp_delegation_scope_01",
                         "target_symbol": "delegate_task",
                         "entry_point": "/api/v1/delegation/delegate-task",
                         "sensitive_operation": "privilege_scope_delegation",
-                        "statement": "Callers can request arbitrary role scope ('admin') in delegate_task without authority validation, enabling vertical privilege escalation.",
+                        "statement": "Callers can request arbitrary role scope ('admin') in delegate_task without caller authority validation.",
                         "preconditions": ["Authenticated caller access to delegation API"],
                         "supporting_evidence": [
                             "api/delegation.py lines 20-35 accept requested_role_scope directly from client",
@@ -135,162 +186,320 @@ def create_simulated_ai_tool_script() -> list[ProviderToolResponse]:
                     },
                 )
             ],
-            tokens_used=240,
+            tokens_used=250,
             finish_reason="tool_calls",
         ),
-        # Turn 5: Check execution engine to verify reachability of privileged sinks
         ProviderToolResponse(
-            content="Checking services/execution_engine.py to verify whether delegated 'admin' scope triggers privileged actions.",
+            content="Inspecting services/execution_engine.py to verify privileged sink reachability.",
             tool_calls=[
                 InvestigationToolCall(
-                    call_id="call_05_excerpt",
+                    call_id="c1_call_06",
                     tool_name="get_source_excerpt",
-                    arguments={
-                        "file_path": "services/execution_engine.py",
-                        "start_line": 15,
-                        "end_line": 35,
-                    },
+                    arguments={"file_path": "services/execution_engine.py", "start_line": 15, "end_line": 40},
                 )
             ],
-            tokens_used=200,
+            tokens_used=210,
             finish_reason="tool_calls",
         ),
-        # Turn 6: Submit final verified finding
         ProviderToolResponse(
-            content="Investigation complete. The authorization delegation flaw allows full privilege escalation. Submitting verified finding.",
+            content="Submitting finalized verified finding for unverified delegation scope.",
             tool_calls=[
                 InvestigationToolCall(
-                    call_id="call_06_finish",
+                    call_id="c1_call_07",
                     tool_name="finish_investigation",
                     arguments={
-                        "summary": "Discovered critical authorization delegation flaw allowing unprivileged callers to elevate to administrative role.",
+                        "summary": "Verified privilege escalation via unverified delegation scope in delegate_task.",
                         "findings": [
                             {
-                                "title": "Vertical Privilege Escalation via Unrestricted Scope Delegation",
-                                "rule_id": "AI-DISCOVERY-AUTH-SCOPE",
+                                "title": "Vertical Privilege Escalation via Unchecked Delegation Scope",
+                                "rule_id": "AI-DISCOVERY-AUTH-001",
                                 "file_path": "api/delegation.py",
                                 "start_line": 20,
-                                "end_line": 38,
+                                "end_line": 35,
                                 "summary": (
-                                    "The delegate_task endpoint permits authenticated users to issue signed delegation tokens "
-                                    "with arbitrary role_scope (e.g. 'admin') without verifying that the caller holds that authority. "
-                                    "When replayed to execute-delegated, the execution engine executes high-privilege administrative tasks."
+                                    "The delegation endpoint accepts requested_role_scope without checking "
+                                    "whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges."
                                 ),
-                                "category": "broken_object_level_auth",
-                                "severity": "high",
+                                "category": "privilege_escalation",
+                                "severity": "critical",
                                 "confidence": "high",
                                 "entry_point": "/api/v1/delegation/delegate-task",
-                                "prerequisites": ["Authenticated worker account"],
-                                "supporting_evidence": [
-                                    "api/delegation.py accepts requested_role_scope without authority validation",
-                                    "services/execution_engine.py grants administrative actions based on token's role_scope claim",
-                                ],
                                 "attack_chain_steps": [
-                                    "1. Attacker sends POST to /api/v1/delegation/delegate-task with requested_role_scope='admin'",
-                                    "2. TaskCoordinator issues HMAC-signed delegation token containing 'role_scope': 'admin'",
-                                    "3. Attacker calls /api/v1/delegation/execute-delegated with generated token",
-                                    "4. ExecutionEngine executes privileged database wipe/config override",
+                                    "1. Authenticated user sends POST /api/v1/delegation/delegate-task with requested_role_scope='admin'",
+                                    "2. delegate_task forwards scope to issue_delegation_token without verifying caller authority",
+                                    "3. Signed delegation token grants admin access in execution_engine.py",
                                 ],
                             }
                         ],
                     },
                 )
             ],
-            tokens_used=310,
+            tokens_used=300,
             finish_reason="tool_calls",
         ),
     ]
 
 
-def create_simulated_safe_ai_tool_script() -> list[ProviderToolResponse]:
-    """Provides simulated tool sequence for the safe counterpart application."""
+def create_simulated_case1_safe_tool_script() -> list[ProviderToolResponse]:
+    """Provides a scripted multi-turn tool sequence for Case 1 Safe counterpart."""
     return [
         ProviderToolResponse(
-            content="Inspecting repository architecture and entry points.",
+            content="Inspecting repository overview.",
             tool_calls=[
-                InvestigationToolCall(call_id="call_s1_overview", tool_name="get_repository_overview", arguments={})
+                InvestigationToolCall(
+                    call_id="c1_s_01",
+                    tool_name="get_repository_overview",
+                    arguments={},
+                )
             ],
-            tokens_used=120,
+            tokens_used=110,
             finish_reason="tool_calls",
         ),
         ProviderToolResponse(
-            content="Inspecting api/delegation.py in safe counterpart.",
+            content="Inspecting delegation handler in api/delegation.py.",
             tool_calls=[
                 InvestigationToolCall(
-                    call_id="call_s2_excerpt",
+                    call_id="c1_s_02",
                     tool_name="get_source_excerpt",
                     arguments={"file_path": "api/delegation.py", "start_line": 15, "end_line": 45},
+                )
+            ],
+            tokens_used=160,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Inspecting database/jobs.py for caller authority verification.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c1_s_03",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "database/jobs.py", "start_line": 10, "end_line": 35},
                 )
             ],
             tokens_used=180,
             finish_reason="tool_calls",
         ),
         ProviderToolResponse(
-            content="Authority check observed: _can_delegate_scope verifies caller roles before token generation. Challenging hypothesis.",
+            content="Mitigating control verified: Caller authority is strictly enforced before delegation token issuance. Concluding safe run.",
             tool_calls=[
                 InvestigationToolCall(
-                    call_id="call_s3_challenge",
-                    tool_name="challenge_hypothesis",
-                    arguments={
-                        "hypothesis_id": "hyp_delegation_safe_01",
-                        "counterevidence": [
-                            "api/delegation.py enforces _can_delegate_scope checking caller roles",
-                            "Delegation denied if requested_scope exceeds caller authority",
-                        ],
-                        "disposition": "mitigated",
-                        "explanation": "Security invariant verified: Caller cannot delegate roles exceeding their own.",
-                    },
-                )
-            ],
-            tokens_used=220,
-            finish_reason="tool_calls",
-        ),
-        ProviderToolResponse(
-            content="Counterevidence confirms authority boundary is enforced. No active vulnerability found.",
-            tool_calls=[
-                InvestigationToolCall(
-                    call_id="call_s4_finish",
+                    call_id="c1_s_04",
                     tool_name="finish_investigation",
                     arguments={
-                        "summary": "Safe counterpart inspected: Delegation scope expansion is prevented by authority check.",
+                        "summary": "Safe counterpart inspected: Delegation scope expansion is prevented by caller authority check in database/jobs.py.",
                         "findings": [],
                     },
                 )
             ],
-            tokens_used=160,
+            tokens_used=150,
             finish_reason="tool_calls",
         ),
     ]
 
 
-async def run_evaluation(
-    provider_name: str = "mock",
+def create_simulated_case2_tool_script() -> list[ProviderToolResponse]:
+    """Provides a scripted multi-turn tool sequence for Case 2 (Billing Reconciliation Race)."""
+    return [
+        ProviderToolResponse(
+            content="Starting architectural overview for billing reconciliation.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_call_01",
+                    tool_name="get_repository_overview",
+                    arguments={},
+                )
+            ],
+            tokens_used=115,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Inspecting refund request entry point in api/refunds.py.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_call_02",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "api/refunds.py", "start_line": 15, "end_line": 38},
+                )
+            ],
+            tokens_used=175,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Tracing asynchronous queue dispatch in services/refund_queue.py.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_call_03",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "services/refund_queue.py", "start_line": 1, "end_line": 20},
+                )
+            ],
+            tokens_used=160,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Recording hypothesis on asynchronous queue double-claim race invariant.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_call_04",
+                    tool_name="record_hypothesis",
+                    arguments={
+                        "hypothesis_id": "hyp_refund_race_01",
+                        "target_symbol": "request_refund",
+                        "entry_point": "/api/v1/refunds/request",
+                        "sensitive_operation": "external_refund_issuance",
+                        "statement": "Concurrent refund requests for the same order are enqueued without atomic state reservation, causing double external payout.",
+                        "preconditions": ["Authenticated caller access to order refund endpoint"],
+                        "supporting_evidence": [
+                            "api/refunds.py enqueues job without atomic state update or lock",
+                            "workers/refund_worker.py triggers external gateway refund before ledger deduction",
+                        ],
+                    },
+                )
+            ],
+            tokens_used=240,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Inspecting background worker in workers/refund_worker.py.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_call_05",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "workers/refund_worker.py", "start_line": 1, "end_line": 25},
+                )
+            ],
+            tokens_used=190,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Submitting finalized verified finding for asynchronous queue race invariant violation.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_call_06",
+                    tool_name="finish_investigation",
+                    arguments={
+                        "summary": "Verified double-claim refund race condition across asynchronous queue boundary.",
+                        "findings": [
+                            {
+                                "title": "Asynchronous Refund Double-Claim Invariant Violation",
+                                "rule_id": "AI-DISCOVERY-RACE-001",
+                                "file_path": "api/refunds.py",
+                                "start_line": 17,
+                                "end_line": 35,
+                                "summary": (
+                                    "The refund endpoint dispatches jobs across an asynchronous queue boundary without "
+                                    "establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds."
+                                ),
+                                "category": "business_logic_race",
+                                "severity": "high",
+                                "confidence": "high",
+                                "entry_point": "request_refund",
+                                "attack_chain_steps": [
+                                    "1. Attacker sends concurrent POST requests to request_refund for the same order_id",
+                                    "2. Both requests pass validation because order status is not atomically reserved",
+                                    "3. Multiple jobs dispatched to refund_queue and executed by refund_worker against external payment gateway",
+                                ],
+                            }
+                        ],
+                    },
+                )
+            ],
+            tokens_used=280,
+            finish_reason="tool_calls",
+        ),
+    ]
+
+
+def create_simulated_case2_safe_tool_script() -> list[ProviderToolResponse]:
+    """Provides a scripted multi-turn tool sequence for Case 2 Safe counterpart."""
+    return [
+        ProviderToolResponse(
+            content="Inspecting repository overview.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_s_01",
+                    tool_name="get_repository_overview",
+                    arguments={},
+                )
+            ],
+            tokens_used=110,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Inspecting safe refund endpoint in api/refunds.py.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_s_02",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "api/refunds.py", "start_line": 15, "end_line": 40},
+                )
+            ],
+            tokens_used=170,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Inspecting database/orders.py to verify atomic reservation locking.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_s_03",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "database/orders.py", "start_line": 15, "end_line": 30},
+                )
+            ],
+            tokens_used=160,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Mitigating control verified: claim_atomic_refund_lock prevents concurrent race condition. Concluding safe run.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c2_s_04",
+                    tool_name="finish_investigation",
+                    arguments={
+                        "summary": "Safe counterpart inspected: Concurrent duplicate claims prevented by atomic reservation lock in database/orders.py.",
+                        "findings": [],
+                    },
+                )
+            ],
+            tokens_used=150,
+            finish_reason="tool_calls",
+        ),
+    ]
+
+
+async def evaluate_single_case(
+    case_spec: dict[str, Any],
+    provider_name: str,
     model_name: str | None = None,
     api_key: str | None = None,
 ) -> dict[str, Any]:
-    """Run full comparative beyond-heuristics evaluation."""
-    vuln_fixture = REPO_ROOT / "tests" / "fixtures" / "workflow_delegation_app"
-    safe_fixture = REPO_ROOT / "tests" / "fixtures" / "workflow_delegation_safe"
+    """Execute evaluation for one isolated ground truth case."""
+    case_id = case_spec["case_id"]
+    vuln_fixture: Path = case_spec["vulnerable_fixture"]
+    safe_fixture: Path = case_spec["safe_fixture"]
 
-    print("=" * 80)
-    print("SEMANTIQ SECURITY — BEYOND-HEURISTICS AUTONOMOUS AI DISCOVERY EVALUATION")
-    print("=" * 80)
+    print("\n" + "=" * 80)
+    print(f"EVALUATING CASE: {case_spec['title']}")
     print(f"Target Fixture (Vulnerable): {vuln_fixture}")
     print(f"Target Fixture (Safe Counterpart): {safe_fixture}")
-    print(f"Configured Provider: {provider_name}")
+    print("=" * 80)
 
-    # Phase 1: Run deterministic scanner on vulnerable application
-    print("\n--- PHASE 1: Running Existing Deterministic Discovery Path ---")
+    # 1. Independent Deterministic Scan Baseline
+    print("\n[Step 1] Running Deterministic Engine Baseline...")
     t0 = time.perf_counter()
     det_findings = run_deterministic_scan(vuln_fixture)
     det_duration = time.perf_counter() - t0
-    print(f"Deterministic scan completed in {det_duration:.2f}s")
-    print(f"Deterministic findings discovered: {len(det_findings)}")
-    for df in det_findings:
-        print(f"  - [{df.get('rule_id')}] {df.get('title')} at {df.get('file_path')}:{df.get('start_line')}")
+    det_found = any(
+        case_spec["primary_flaw_file"] in f.get("file_path", "")
+        for f in det_findings
+    )
+    print(f"  Deterministic duration: {det_duration:.2f}s | Findings discovered: {len(det_findings)}")
+    print(f"  Deterministic detection: {'DETECTED' if det_found else 'MISSED (0 findings) — Flaw is beyond static heuristics'}")
 
-    # Phase 2: Setup AI Provider
+    # 2. Setup AI Provider
     ai_provider: BaseAIProvider
+    is_scripted_mock = False
+
     if provider_name == "openai":
         key = api_key or os.environ.get("OPENAI_API_KEY")
         ai_provider = OpenAIProvider(AIConfig(enabled=True, provider="openai", model=model_name or "gpt-4o", api_key=key))
@@ -298,14 +507,19 @@ async def run_evaluation(
         key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         ai_provider = AnthropicProvider(AIConfig(enabled=True, provider="anthropic", model=model_name or "claude-3-5-sonnet-20241022", api_key=key))
     else:
-        # Scripted mock provider demonstrating full multi-turn autonomous investigation
+        is_scripted_mock = True
+        script = (
+            create_simulated_case1_tool_script()
+            if case_id == "case_1_delegation_scope"
+            else create_simulated_case2_tool_script()
+        )
         ai_provider = MockAIProvider(
-            config=AIConfig(enabled=True, provider="mock", model="simulated-agent"),
-            tool_script=create_simulated_ai_tool_script(),
+            config=AIConfig(enabled=True, provider="mock", model="scripted-workflow-agent"),
+            tool_script=script,
         )
 
-    # Phase 2: Run Live AI Investigation on Vulnerable Target
-    print("\n--- PHASE 2: Running Autonomous AI Investigation on Vulnerable Target ---")
+    # 3. Autonomous AI Investigation on Vulnerable Target
+    print("\n[Step 2] Running AI Investigation on Vulnerable Target...")
     inspector = RepositoryInspector(ScanConfig(ai_enabled=True))
     inspection = inspector.inspect(vuln_fixture)
     intelligence = RepositoryIntelligence(vuln_fixture)
@@ -320,30 +534,32 @@ async def run_evaluation(
     )
 
     t1 = time.perf_counter()
-    ai_trace = await ai_investigator.investigate(
-        prompt_hint="Investigate task execution and delegation workflows for authorization, privilege escalation, or boundary bypasses."
-    )
+    ai_trace = await ai_investigator.investigate(prompt_hint=None)
     ai_duration = time.perf_counter() - t1
 
-    print(f"Investigation execution mode: {ai_trace.execution_mode}")
-    print(f"Status: {ai_trace.status} ({ai_trace.status_reason or 'OK'})")
-    print(f"Turns executed: {len(ai_trace.turns)} | Duration: {ai_duration:.2f}s | Tokens used: {ai_trace.total_tokens_used}")
-    print(f"Hypotheses created: {len(ai_trace.hypotheses_created)}")
-    for h in ai_trace.hypotheses_created:
-        print(f"  * [{h.disposition}] {h.statement[:90]}...")
+    test_type = "scripted_workflow_test" if is_scripted_mock else "live_discovery_test"
+    print(f"  Test Type: {test_type}")
+    print(f"  Execution mode: {ai_trace.execution_mode} | Status: {ai_trace.status}")
+    if ai_trace.status == "NOT_RUN":
+        print(f"  [HONEST STATUS] Live evaluation skipped: {ai_trace.status_reason}")
+    else:
+        print(f"  Turns executed: {len(ai_trace.turns)} | Duration: {ai_duration:.2f}s | Tokens used: {ai_trace.total_tokens_used}")
+        print(f"  Hypotheses recorded: {len(ai_trace.hypotheses_created)}")
+        print(f"  Findings verified: {len(ai_trace.final_findings)}")
+        for f in ai_trace.final_findings:
+            print(f"    * [{f.rule_id}] {f.title} at {f.file_path}:{f.start_line}-{f.end_line}")
 
-    print(f"Final AI findings verified: {len(ai_trace.final_findings)}")
-    for f in ai_trace.final_findings:
-        print(f"  ! Discovered: '{f.title}' at {f.file_path}:{f.start_line}-{f.end_line}")
-        print(f"    Confidence: {f.confidence.value} | Severity: {f.severity.value}")
-        print(f"    Attack Chain Steps: {len(f.attack_chain)}")
-
-    # Phase 3: Run AI Investigation on Safe Counterpart (False Positive Evaluation)
-    print("\n--- PHASE 3: Running AI Investigation on Safe Counterpart ---")
-    if provider_name == "mock":
+    # 4. Safe Counterpart Run (False Positive Verification)
+    print("\n[Step 3] Running False Positive Evaluation on Safe Counterpart...")
+    if is_scripted_mock:
+        safe_script = (
+            create_simulated_case1_safe_tool_script()
+            if case_id == "case_1_delegation_scope"
+            else create_simulated_case2_safe_tool_script()
+        )
         safe_provider: BaseAIProvider = MockAIProvider(
-            config=AIConfig(enabled=True, provider="mock", model="simulated-agent"),
-            tool_script=create_simulated_safe_ai_tool_script(),
+            config=AIConfig(enabled=True, provider="mock", model="scripted-workflow-agent"),
+            tool_script=safe_script,
         )
     else:
         safe_provider = ai_provider
@@ -361,74 +577,116 @@ async def run_evaluation(
         source_revision=safe_inspection.git_revision or "",
     )
 
-    safe_trace = await safe_investigator.investigate(
-        prompt_hint="Investigate task execution and delegation workflows for authorization, privilege escalation, or boundary bypasses."
-    )
-    print(f"Safe counterpart findings: {len(safe_trace.final_findings)} (Expected: 0 false positives)")
-
-    # Evaluation Synthesis
-    ai_found_flaw = len(ai_trace.final_findings) > 0 and any(
-        "delegation" in f.file_path.lower() or "delegation" in f.title.lower()
-        for f in ai_trace.final_findings
-    )
-    det_found_flaw = len(det_findings) > 0
+    safe_trace = await safe_investigator.investigate(prompt_hint=None)
     safe_fp_count = len(safe_trace.final_findings)
+    print(f"  Safe counterpart findings: {safe_fp_count} (Expected: 0 false positives)")
 
-    print("\n" + "=" * 80)
-    print("EVALUATION SUMMARY & COMPARATIVE AUDIT")
-    print("=" * 80)
-    print("1. Vulnerability Flaw Class: Vertical Privilege Escalation via Unchecked Delegation Scope")
-    print(f"2. Deterministic Engine Result: {'DETECTED' if det_found_flaw else 'MISSED (0 findings) — Flaw is beyond existing static heuristics'}")
-    print(f"3. Autonomous AI Investigator Result: {'DISCOVERED' if ai_found_flaw else 'NOT DISCOVERED'}")
-    print(f"4. Citation Verification: {'PASS (All citations ground-truth verified against file)' if ai_trace.citations_verified else 'FAIL'}")
-    print(f"5. False Positive Rate on Safe Counterpart: {safe_fp_count} false positives")
-    print("=" * 80)
+    # 5. Result Scoring against Hidden Ground Truth
+    flaw_discovered = False
+    verified_location = False
+    invariant_described = False
 
-    report: dict[str, Any] = {
-        "evaluation_name": "beyond_heuristics_delegation_scope",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+    for f in ai_trace.final_findings:
+        if case_spec["primary_flaw_file"] in f.file_path:
+            verified_location = True
+            summary_lower = f.summary.lower()
+            if any(term in summary_lower for term in ["scope", "authority", "privilege", "atomic", "race", "lock", "concurren"]):
+                invariant_described = True
+                flaw_discovered = True
+                break
+
+    return {
+        "case_id": case_id,
+        "title": case_spec["title"],
+        "test_type": test_type,
         "provider": provider_name,
-        "model": model_name or "default",
+        "model": model_name or getattr(ai_provider.config, "model", "default"),
         "execution_mode": ai_trace.execution_mode,
         "status": ai_trace.status,
         "status_reason": ai_trace.status_reason,
-        "target_fixture": str(vuln_fixture),
-        "safe_counterpart_fixture": str(safe_fixture),
-        "deterministic_scan": {
+        "deterministic_baseline": {
             "duration_seconds": det_duration,
             "findings_count": len(det_findings),
-            "discovered_flaw": det_found_flaw,
+            "discovered": det_found,
         },
-        "ai_investigation": {
-            "run_id": ai_trace.run_id,
+        "investigator_result": {
             "duration_seconds": ai_duration,
             "turns_count": len(ai_trace.turns),
             "tokens_used": ai_trace.total_tokens_used,
             "hypotheses_count": len(ai_trace.hypotheses_created),
             "findings_count": len(ai_trace.final_findings),
-            "discovered_flaw": ai_found_flaw,
             "citations_verified": ai_trace.citations_verified,
+            "flaw_discovered": flaw_discovered,
+            "verified_location": verified_location,
+            "invariant_described": invariant_described,
             "stop_reason": ai_trace.stop_reason,
             "findings": [f.model_dump() for f in ai_trace.final_findings],
-            "turns_summary": [
-                {
-                    "turn": t.turn_number,
-                    "tool_calls": [tc["tool_name"] for tc in t.tool_calls],
-                    "tokens": t.tokens_used,
-                }
-                for t in ai_trace.turns
-            ],
         },
-        "safe_counterpart_evaluation": {
+        "safe_counterpart": {
             "status": safe_trace.status,
             "false_positives_count": safe_fp_count,
         },
     }
 
+
+async def run_evaluation(
+    provider_name: str = "mock",
+    model_name: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    """Execute complete beyond-heuristics evaluation across all cases."""
+    print("=" * 80)
+    print("SEMANTIQ SECURITY — BEYOND-HEURISTICS EVALUATION HARNESS")
+    print("Multi-Case Autonomous Investigation & Security Invariant Discovery")
+    print("=" * 80)
+    print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
+    print(f"Configured Provider: {provider_name}")
+    if provider_name in ("openai", "anthropic"):
+        has_key = bool(api_key or os.environ.get(f"{provider_name.upper()}_API_KEY"))
+        print(f"API Credentials Present: {has_key}")
+
+    case_results: list[dict[str, Any]] = []
+    for _case_id, case_spec in GROUND_TRUTH_CASES.items():
+        res = await evaluate_single_case(
+
+            case_spec=case_spec,
+            provider_name=provider_name,
+            model_name=model_name,
+            api_key=api_key,
+        )
+        case_results.append(res)
+
+    print("\n" + "=" * 80)
+    print("EVALUATION SUMMARY & COMPARATIVE AUDIT TABLE")
+    print("=" * 80)
+    print(f"{'Case':<32} | {'Mode':<10} | {'Status':<10} | {'Det Base':<10} | {'Investigator':<12} | {'Citations':<10} | {'FP (Safe)':<9}")
+    print("-" * 105)
+
+    for r in case_results:
+        inv = r["investigator_result"]
+        det = r["deterministic_baseline"]
+        safe = r["safe_counterpart"]
+        det_str = "DETECTED" if det["discovered"] else "MISSED"
+        inv_str = "DISCOVERED" if inv["flaw_discovered"] else ("NOT_RUN" if r["status"] == "NOT_RUN" else "MISSED")
+        cit_str = "VALID" if inv["citations_verified"] else ("N/A" if r["status"] == "NOT_RUN" else "INVALID")
+        print(
+            f"{r['case_id']:<32} | {r['execution_mode']:<10} | {r['status']:<10} | {det_str:<10} | {inv_str:<12} | {cit_str:<10} | {safe['false_positives_count']:<9}"
+        )
+    print("=" * 105)
+
+    report: dict[str, Any] = {
+        "evaluation_name": "beyond_heuristics_multi_case",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "provider": provider_name,
+        "model": model_name or "default",
+        "cases_evaluated": len(case_results),
+        "results": case_results,
+    }
+
     report_path = REPO_ROOT / "evals" / "beyond_heuristics" / "evaluation_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(f"\nAudit report saved to: {report_path}")
+    print(f"\nComprehensive audit report written to: {report_path}")
     return report
 
 
