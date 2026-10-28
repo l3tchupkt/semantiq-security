@@ -381,6 +381,10 @@ class InvestigationToolExecutor:
             for h_dict in prior_memory.hypotheses:
                 with contextlib.suppress(Exception):
                     h_obj = InvestigationHypothesis.model_validate(h_dict)
+                    if h_obj.disposition == "confirmed":
+                        h_obj.uncertainty = (
+                            "Loaded from prior persistent session; must be re-grounded against current source."
+                        )
                     self.hypotheses[h_obj.hypothesis_id] = h_obj
         self.findings: list[Finding] = []
         self.invalid_citations: list[dict[str, Any]] = []

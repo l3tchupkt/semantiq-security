@@ -1,107 +1,846 @@
 {
   "evaluation_name": "beyond_heuristics_multi_case",
-  "timestamp": "2026-10-28T16:19:14.302646+00:00",
-  "provider": "nvidia",
-  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
-  "cases_evaluated": 3,
+  "timestamp": "2026-10-28T18:36:14.818676+00:00",
+  "provider": "mock",
+  "model": "default",
+  "cases_evaluated": 4,
   "results": [
     {
       "case_id": "case_1_delegation_scope",
       "title": "Cross-Module Privilege Escalation via Unverified Delegation Scope",
-      "test_type": "live_discovery_test",
-      "provider": "nvidia",
-      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
-      "execution_mode": "unconfigured",
-      "status": "NOT_RUN",
-      "status_reason": "MISSING_API_KEY: Live provider credentials not configured in environment.",
+      "test_type": "scripted_workflow_test",
+      "provider": "mock",
+      "model": "scripted-workflow-agent",
+      "execution_mode": "mock",
+      "status": "COMPLETED",
+      "status_reason": "Model completed investigation and submitted findings.",
       "deterministic_baseline": {
-        "duration_seconds": 0.1929283999998006,
+        "duration_seconds": 0.23839790000056382,
         "findings_count": 0,
         "discovered": false
       },
       "investigator_result": {
-        "duration_seconds": 4.650000118999742e-05,
-        "turns_count": 0,
-        "tokens_used": 0,
-        "hypotheses_count": 0,
-        "findings_count": 0,
-        "citations_verified": false,
-        "flaw_discovered": false,
-        "verified_location": false,
-        "invariant_described": false,
-        "stop_reason": "unconfigured_credentials",
-        "findings": []
+        "duration_seconds": 0.003589800002373522,
+        "turns_count": 7,
+        "tokens_used": 1450,
+        "hypotheses_count": 1,
+        "findings_count": 1,
+        "citations_verified": true,
+        "flaw_discovered": true,
+        "adjudication_verdict": "confirmed_exploitable",
+        "demonstrated_impact": "Vertical privilege escalation: An authenticated user can grant arbitrary role scopes ('admin') via signed delegation tokens, enabling execution of privileged operations (purge_all_audit_logs, override_system_configuration) in ExecutionEngine.",
+        "adjudication_reasons": [
+          "Root cause accurately identified.",
+          "Reachable entry point verified.",
+          "Security invariant violation confirmed.",
+          "Demonstrated impact substantiated: Vertical privilege escalation: An authenticated user can grant arbitrary role scopes ('admin') via signed delegation tokens, enabling execution of privileged operations (purge_all_audit_logs, override_system_configuration) in ExecutionEngine."
+        ],
+        "stop_reason": "finished_by_model",
+        "findings": [
+          {
+            "finding_id": "sqf_ai-discovery-auth-001_20",
+            "occurrence_id": "occ_ai-discovery-auth-001_20",
+            "rule_id": "AI-DISCOVERY-AUTH-001",
+            "title": "Vertical Privilege Escalation via Unchecked Delegation Scope",
+            "summary": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+            "category": "generic",
+            "severity": "critical",
+            "confidence": "high",
+            "cwe_ids": [],
+            "file_path": "api/delegation.py",
+            "start_line": 20,
+            "end_line": 35,
+            "locations": [
+              {
+                "file_path": "api/delegation.py",
+                "start_line": 20,
+                "end_line": 35,
+                "column": null,
+                "symbol": "/api/v1/delegation/delegate-task",
+                "role": "sink"
+              }
+            ],
+            "code_evidence": [
+              {
+                "snippet": "    @require_auth\n    def delegate_task(self, request_data: dict[str, Any], current_user: dict[str, Any]) -> dict[str, Any]:\n        \"\"\"Allows worker to delegate subtask execution authority to another user or agent.\n\n        Request parameters:\n            delegatee_id: string ID of the recipient\n            requested_role_scope: role permission scope granted ('standard', 'analyst', 'admin')\n        \"\"\"\n        caller_id = current_user.get(\"user_id\", \"anonymous\")\n        delegatee_id = request_data.get(\"delegatee_id\", \"\")\n        requested_scope = request_data.get(\"requested_role_scope\", \"standard\")\n\n        token = coordinator.issue_delegation_token(\n            delegator_id=caller_id,\n            delegatee_id=delegatee_id,\n            requested_scope=requested_scope,",
+                "start_line": 20,
+                "end_line": 35,
+                "explanation": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+                "role": "sink"
+              }
+            ],
+            "data_flow": [
+              {
+                "location": {
+                  "file_path": "api/delegation.py",
+                  "start_line": 20,
+                  "end_line": 35,
+                  "column": null,
+                  "symbol": "/api/v1/delegation/delegate-task",
+                  "role": "sink"
+                },
+                "description": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+                "transformation": null
+              }
+            ],
+            "impact": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+            "prerequisites": [],
+            "conditions_required": [],
+            "sanitizers_considered": [],
+            "counterevidence": [],
+            "supporting_evidence": [],
+            "attack_chain": [
+              "1. Authenticated user sends POST /api/v1/delegation/delegate-task with requested_role_scope='admin'",
+              "2. delegate_task forwards scope to issue_delegation_token without verifying caller authority",
+              "3. Signed delegation token grants admin access in execution_engine.py"
+            ],
+            "structured_attack_chain": {
+              "chain_id": "achain_ai-discovery-auth-001_20",
+              "title": "Attack Chain: Vertical Privilege Escalation via Unchecked Delegation Scope",
+              "starting_point": "/api/v1/delegation/delegate-task",
+              "target_operation": "Vertical Privilege Escalation via Unchecked Delegation Scope",
+              "attacker_capability": "unauthenticated_attacker",
+              "preconditions": [],
+              "steps": [
+                {
+                  "step_number": 1,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 20,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "/api/v1/delegation/delegate-task",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "1. Authenticated user sends POST /api/v1/delegation/delegate-task with requested_role_scope='admin'",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 2,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 20,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "/api/v1/delegation/delegate-task",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "2. delegate_task forwards scope to issue_delegation_token without verifying caller authority",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 3,
+                  "location": {
+                    "file_path": "api/delegation.py",
+                    "start_line": 20,
+                    "end_line": 35,
+                    "column": null,
+                    "symbol": "/api/v1/delegation/delegate-task",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "3. Signed delegation token grants admin access in execution_engine.py",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                }
+              ],
+              "trust_boundaries": [],
+              "potential_impact": "The delegation endpoint accepts requested_role_scope without checking whether the caller holds that authority, allowing callers to grant themselves 'admin' privileges.",
+              "validation_requirements": [],
+              "is_exploitable_estimate": true,
+              "unresolved_factors": []
+            },
+            "hypothesis": null,
+            "uncertainty": "",
+            "validation_status": "evidence_supported",
+            "validation_result": null,
+            "remediation": "",
+            "remediation_patch": null,
+            "fingerprint": "semantiq/v1:sha256:4a8e521b28f4cefe026ac11c4c079cb8f6bf3eaefa45ba655490ec26488be28d",
+            "discovery_backend": "ai_live_investigator",
+            "scan_id": "",
+            "created_at": "2026-10-28T18:36:12.962974+00:00",
+            "metadata": {}
+          }
+        ],
+        "adjudicated_records": [
+          {
+            "finding_id": "sqf_ai-discovery-auth-001_20",
+            "title": "Vertical Privilege Escalation via Unchecked Delegation Scope",
+            "verdict": "confirmed_exploitable",
+            "confidence": "high",
+            "root_cause_accurate": true,
+            "entry_point_reachable": true,
+            "invariant_violated": true,
+            "protections_neutralized": false,
+            "impact_substantiated": true,
+            "citations_valid": true,
+            "reasons": [
+              "Root cause accurately identified.",
+              "Reachable entry point verified.",
+              "Security invariant violation confirmed.",
+              "Demonstrated impact substantiated: Vertical privilege escalation: An authenticated user can grant arbitrary role scopes ('admin') via signed delegation tokens, enabling execution of privileged operations (purge_all_audit_logs, override_system_configuration) in ExecutionEngine."
+            ],
+            "demonstrated_impact": "Vertical privilege escalation: An authenticated user can grant arbitrary role scopes ('admin') via signed delegation tokens, enabling execution of privileged operations (purge_all_audit_logs, override_system_configuration) in ExecutionEngine.",
+            "canonical_flaw_key": "case_1_delegation_scope:api/delegation.py"
+          }
+        ]
       },
       "safe_counterpart": {
-        "status": "NOT_RUN",
+        "status": "COMPLETED",
         "false_positives_count": 0,
-        "findings": []
+        "findings": [],
+        "adjudicated_records": []
       }
     },
     {
       "case_id": "case_2_reconciliation_race",
       "title": "Asynchronous Queue Double-Claim Invariant Violation",
-      "test_type": "live_discovery_test",
-      "provider": "nvidia",
-      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
-      "execution_mode": "unconfigured",
-      "status": "NOT_RUN",
-      "status_reason": "MISSING_API_KEY: Live provider credentials not configured in environment.",
+      "test_type": "scripted_workflow_test",
+      "provider": "mock",
+      "model": "scripted-workflow-agent",
+      "execution_mode": "mock",
+      "status": "COMPLETED",
+      "status_reason": "Model completed investigation and submitted findings.",
       "deterministic_baseline": {
-        "duration_seconds": 0.14775819999886153,
+        "duration_seconds": 0.2266641999995045,
         "findings_count": 0,
         "discovered": false
       },
       "investigator_result": {
-        "duration_seconds": 5.390000114857685e-05,
-        "turns_count": 0,
-        "tokens_used": 0,
-        "hypotheses_count": 0,
-        "findings_count": 0,
-        "citations_verified": false,
-        "flaw_discovered": false,
-        "verified_location": false,
-        "invariant_described": false,
-        "stop_reason": "unconfigured_credentials",
-        "findings": []
+        "duration_seconds": 0.0019530999998096377,
+        "turns_count": 6,
+        "tokens_used": 1160,
+        "hypotheses_count": 1,
+        "findings_count": 1,
+        "citations_verified": true,
+        "flaw_discovered": true,
+        "adjudication_verdict": "confirmed_exploitable",
+        "demonstrated_impact": "Financial loss via duplicate payouts: Concurrent refund requests for the same order are accepted and enqueued without an atomic reservation lock, triggering multiple external payment gateway transfers before ledger deduction occurs.",
+        "adjudication_reasons": [
+          "Root cause accurately identified.",
+          "Reachable entry point verified.",
+          "Security invariant violation confirmed.",
+          "Demonstrated impact substantiated: Financial loss via duplicate payouts: Concurrent refund requests for the same order are accepted and enqueued without an atomic reservation lock, triggering multiple external payment gateway transfers before ledger deduction occurs."
+        ],
+        "stop_reason": "finished_by_model",
+        "findings": [
+          {
+            "finding_id": "sqf_ai-discovery-race-001_17",
+            "occurrence_id": "occ_ai-discovery-race-001_17",
+            "rule_id": "AI-DISCOVERY-RACE-001",
+            "title": "Asynchronous Refund Double-Claim Invariant Violation",
+            "summary": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+            "category": "generic",
+            "severity": "high",
+            "confidence": "high",
+            "cwe_ids": [],
+            "file_path": "api/refunds.py",
+            "start_line": 17,
+            "end_line": 31,
+            "locations": [
+              {
+                "file_path": "api/refunds.py",
+                "start_line": 17,
+                "end_line": 31,
+                "column": null,
+                "symbol": "request_refund",
+                "role": "sink"
+              }
+            ],
+            "code_evidence": [
+              {
+                "snippet": "@jwt_required\ndef request_refund(order_id: str, caller_id: str, amount: float) -> dict[str, Any]:\n    \"\"\"Accept and enqueue a refund request for processing.\"\"\"\n    order = get_order_by_id(order_id)\n    if not order:\n        return {\"error\": \"Order not found\", \"status\": 404}\n\n    if order.get(\"user_id\") != caller_id:\n        return {\"error\": \"Unauthorized order access\", \"status\": 403}\n\n    if amount > order.get(\"amount\", 0.0):\n        return {\"error\": \"Amount exceeds order total\", \"status\": 400}\n\n    job_id = dispatch_refund_job(order_id=order_id, amount=amount, recipient=caller_id)\n    return {\"status\": \"accepted\", \"job_id\": job_id, \"state\": \"PENDING\"}",
+                "start_line": 17,
+                "end_line": 31,
+                "explanation": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+                "role": "sink"
+              }
+            ],
+            "data_flow": [
+              {
+                "location": {
+                  "file_path": "api/refunds.py",
+                  "start_line": 17,
+                  "end_line": 31,
+                  "column": null,
+                  "symbol": "request_refund",
+                  "role": "sink"
+                },
+                "description": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+                "transformation": null
+              }
+            ],
+            "impact": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+            "prerequisites": [],
+            "conditions_required": [],
+            "sanitizers_considered": [],
+            "counterevidence": [],
+            "supporting_evidence": [],
+            "attack_chain": [
+              "1. Attacker sends concurrent POST requests to request_refund for the same order_id",
+              "2. Both requests pass validation because order status is not atomically reserved",
+              "3. Multiple jobs dispatched to refund_queue and executed by refund_worker against external payment gateway"
+            ],
+            "structured_attack_chain": {
+              "chain_id": "achain_ai-discovery-race-001_17",
+              "title": "Attack Chain: Asynchronous Refund Double-Claim Invariant Violation",
+              "starting_point": "request_refund",
+              "target_operation": "Asynchronous Refund Double-Claim Invariant Violation",
+              "attacker_capability": "unauthenticated_attacker",
+              "preconditions": [],
+              "steps": [
+                {
+                  "step_number": 1,
+                  "location": {
+                    "file_path": "api/refunds.py",
+                    "start_line": 17,
+                    "end_line": 31,
+                    "column": null,
+                    "symbol": "request_refund",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "1. Attacker sends concurrent POST requests to request_refund for the same order_id",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 2,
+                  "location": {
+                    "file_path": "api/refunds.py",
+                    "start_line": 17,
+                    "end_line": 31,
+                    "column": null,
+                    "symbol": "request_refund",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "2. Both requests pass validation because order status is not atomically reserved",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 3,
+                  "location": {
+                    "file_path": "api/refunds.py",
+                    "start_line": 17,
+                    "end_line": 31,
+                    "column": null,
+                    "symbol": "request_refund",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "3. Multiple jobs dispatched to refund_queue and executed by refund_worker against external payment gateway",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                }
+              ],
+              "trust_boundaries": [],
+              "potential_impact": "The refund endpoint dispatches jobs across an asynchronous queue boundary without establishing an atomic reservation lock, allowing concurrent requests to trigger duplicate refunds.",
+              "validation_requirements": [],
+              "is_exploitable_estimate": true,
+              "unresolved_factors": []
+            },
+            "hypothesis": null,
+            "uncertainty": "",
+            "validation_status": "evidence_supported",
+            "validation_result": null,
+            "remediation": "",
+            "remediation_patch": null,
+            "fingerprint": "semantiq/v1:sha256:b4797dc7b634f7b7dc2561a5eec31433175a6be659f97ab16f2974f53e620c9f",
+            "discovery_backend": "ai_live_investigator",
+            "scan_id": "",
+            "created_at": "2026-10-28T18:36:13.562722+00:00",
+            "metadata": {}
+          }
+        ],
+        "adjudicated_records": [
+          {
+            "finding_id": "sqf_ai-discovery-race-001_17",
+            "title": "Asynchronous Refund Double-Claim Invariant Violation",
+            "verdict": "confirmed_exploitable",
+            "confidence": "high",
+            "root_cause_accurate": true,
+            "entry_point_reachable": true,
+            "invariant_violated": true,
+            "protections_neutralized": false,
+            "impact_substantiated": true,
+            "citations_valid": true,
+            "reasons": [
+              "Root cause accurately identified.",
+              "Reachable entry point verified.",
+              "Security invariant violation confirmed.",
+              "Demonstrated impact substantiated: Financial loss via duplicate payouts: Concurrent refund requests for the same order are accepted and enqueued without an atomic reservation lock, triggering multiple external payment gateway transfers before ledger deduction occurs."
+            ],
+            "demonstrated_impact": "Financial loss via duplicate payouts: Concurrent refund requests for the same order are accepted and enqueued without an atomic reservation lock, triggering multiple external payment gateway transfers before ledger deduction occurs.",
+            "canonical_flaw_key": "case_2_reconciliation_race:api/refunds.py"
+          }
+        ]
       },
       "safe_counterpart": {
-        "status": "NOT_RUN",
+        "status": "COMPLETED",
         "false_positives_count": 0,
-        "findings": []
+        "findings": [],
+        "adjudicated_records": []
       }
     },
     {
       "case_id": "case_3_tenant_cache_poisoning",
       "title": "Cross-Tenant Workload Cache Poisoning via Unscoped Spec Hash",
-      "test_type": "live_discovery_test",
-      "provider": "nvidia",
-      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
-      "execution_mode": "unconfigured",
-      "status": "NOT_RUN",
-      "status_reason": "MISSING_API_KEY: Live provider credentials not configured in environment.",
+      "test_type": "scripted_workflow_test",
+      "provider": "mock",
+      "model": "scripted-workflow-agent",
+      "execution_mode": "mock",
+      "status": "COMPLETED",
+      "status_reason": "Model completed investigation and submitted findings.",
       "deterministic_baseline": {
-        "duration_seconds": 0.16997469999841996,
+        "duration_seconds": 0.15132739999899059,
         "findings_count": 0,
         "discovered": false
       },
       "investigator_result": {
-        "duration_seconds": 3.839999953925144e-05,
-        "turns_count": 0,
-        "tokens_used": 0,
-        "hypotheses_count": 0,
-        "findings_count": 0,
-        "citations_verified": false,
-        "flaw_discovered": false,
-        "verified_location": false,
-        "invariant_described": false,
-        "stop_reason": "unconfigured_credentials",
-        "findings": []
+        "duration_seconds": 0.0037560000018856954,
+        "turns_count": 6,
+        "tokens_used": 1130,
+        "hypotheses_count": 1,
+        "findings_count": 1,
+        "citations_verified": true,
+        "flaw_discovered": true,
+        "adjudication_verdict": "confirmed_exploitable",
+        "demonstrated_impact": "Cross-tenant execution bundle substitution: Workload bundles are cached using a global cache key 'bundle:{spec_hash}' without tenant scoping. Tenant A can pre-seed a spec_hash whose entrypoint and environment are reused when Tenant B executes the same workload.",
+        "adjudication_reasons": [
+          "Reachable entry point not substantiated. Expected one of: ['submit_workload', 'WorkloadRouter.submit_workload', '/api/v1/workloads/submit', 'compile_workload_bundle']",
+          "Root cause accurately identified.",
+          "Reachable entry point verified.",
+          "Security invariant violation confirmed.",
+          "Demonstrated impact substantiated: Cross-tenant execution bundle substitution: Workload bundles are cached using a global cache key 'bundle:{spec_hash}' without tenant scoping. Tenant A can pre-seed a spec_hash whose entrypoint and environment are reused when Tenant B executes the same workload."
+        ],
+        "stop_reason": "finished_by_model",
+        "findings": [
+          {
+            "finding_id": "sqf_ai-discovery-tenant-001_25",
+            "occurrence_id": "occ_ai-discovery-tenant-001_25",
+            "rule_id": "AI-DISCOVERY-TENANT-001",
+            "title": "Cross-Tenant Workload Cache Poisoning via Unscoped Spec Hash",
+            "summary": "The compilation service caches execution bundles under global key 'bundle:{spec_hash}' without including tenant_id. A malicious tenant can pre-seed a spec_hash with malicious instructions that are subsequently executed when another tenant compiles that specification.",
+            "category": "generic",
+            "severity": "critical",
+            "confidence": "high",
+            "cwe_ids": [],
+            "file_path": "services/compiler.py",
+            "start_line": 25,
+            "end_line": 40,
+            "locations": [
+              {
+                "file_path": "services/compiler.py",
+                "start_line": 25,
+                "end_line": 40,
+                "column": null,
+                "symbol": "api/workloads.py",
+                "role": "sink"
+              }
+            ],
+            "code_evidence": [
+              {
+                "snippet": "            tenant_id: organization submitting workload\n            spec_hash: content addressable hash of the workload definition\n            build_instructions: execution command, environment variables, and image\n        \"\"\"\n        cache_key = f\"bundle:{spec_hash}\"\n        cached = cache.get_bundle(cache_key)\n        if cached is not None:\n            return cached\n\n        bundle_id = hashlib.sha256(f\"{tenant_id}:{spec_hash}\".encode()).hexdigest()[:16]\n        bundle = {\n            \"bundle_id\": bundle_id,\n            \"origin_tenant\": tenant_id,\n            \"spec_hash\": spec_hash,\n            \"entrypoint\": build_instructions.get(\"entrypoint\", \"python -m main\"),\n            \"environment\": build_instructions.get(\"env\", {}),",
+                "start_line": 25,
+                "end_line": 40,
+                "explanation": "The compilation service caches execution bundles under global key 'bundle:{spec_hash}' without including tenant_id. A malicious tenant can pre-seed a spec_hash with malicious instructions that are subsequently executed when another tenant compiles that specification.",
+                "role": "sink"
+              }
+            ],
+            "data_flow": [
+              {
+                "location": {
+                  "file_path": "services/compiler.py",
+                  "start_line": 25,
+                  "end_line": 40,
+                  "column": null,
+                  "symbol": "api/workloads.py",
+                  "role": "sink"
+                },
+                "description": "The compilation service caches execution bundles under global key 'bundle:{spec_hash}' without including tenant_id. A malicious tenant can pre-seed a spec_hash with malicious instructions that are subsequently executed when another tenant compiles that specification.",
+                "transformation": null
+              }
+            ],
+            "impact": "The compilation service caches execution bundles under global key 'bundle:{spec_hash}' without including tenant_id. A malicious tenant can pre-seed a spec_hash with malicious instructions that are subsequently executed when another tenant compiles that specification.",
+            "prerequisites": [],
+            "conditions_required": [],
+            "sanitizers_considered": [],
+            "counterevidence": [],
+            "supporting_evidence": [],
+            "attack_chain": [
+              "1. Tenant Alpha submits workload with spec_hash 'spec_123' and malicious entrypoint",
+              "2. WorkloadCompiler saves bundle to global cache key 'bundle:spec_123'",
+              "3. Tenant Beta submits legitimate workload with identical spec_hash 'spec_123'",
+              "4. Compiler reuses Tenant Alpha's cached bundle, executing Tenant Alpha code in Tenant Beta context"
+            ],
+            "structured_attack_chain": {
+              "chain_id": "achain_ai-discovery-tenant-001_25",
+              "title": "Attack Chain: Cross-Tenant Workload Cache Poisoning via Unscoped Spec Hash",
+              "starting_point": "api/workloads.py",
+              "target_operation": "Cross-Tenant Workload Cache Poisoning via Unscoped Spec Hash",
+              "attacker_capability": "unauthenticated_attacker",
+              "preconditions": [],
+              "steps": [
+                {
+                  "step_number": 1,
+                  "location": {
+                    "file_path": "services/compiler.py",
+                    "start_line": 25,
+                    "end_line": 40,
+                    "column": null,
+                    "symbol": "api/workloads.py",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "1. Tenant Alpha submits workload with spec_hash 'spec_123' and malicious entrypoint",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 2,
+                  "location": {
+                    "file_path": "services/compiler.py",
+                    "start_line": 25,
+                    "end_line": 40,
+                    "column": null,
+                    "symbol": "api/workloads.py",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "2. WorkloadCompiler saves bundle to global cache key 'bundle:spec_123'",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 3,
+                  "location": {
+                    "file_path": "services/compiler.py",
+                    "start_line": 25,
+                    "end_line": 40,
+                    "column": null,
+                    "symbol": "api/workloads.py",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "3. Tenant Beta submits legitimate workload with identical spec_hash 'spec_123'",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 4,
+                  "location": {
+                    "file_path": "services/compiler.py",
+                    "start_line": 25,
+                    "end_line": 40,
+                    "column": null,
+                    "symbol": "api/workloads.py",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "4. Compiler reuses Tenant Alpha's cached bundle, executing Tenant Alpha code in Tenant Beta context",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                }
+              ],
+              "trust_boundaries": [],
+              "potential_impact": "The compilation service caches execution bundles under global key 'bundle:{spec_hash}' without including tenant_id. A malicious tenant can pre-seed a spec_hash with malicious instructions that are subsequently executed when another tenant compiles that specification.",
+              "validation_requirements": [],
+              "is_exploitable_estimate": true,
+              "unresolved_factors": []
+            },
+            "hypothesis": null,
+            "uncertainty": "",
+            "validation_status": "evidence_supported",
+            "validation_result": null,
+            "remediation": "",
+            "remediation_patch": null,
+            "fingerprint": "semantiq/v1:sha256:e8197e09433e3989856de7aa396fed93fd6853fddd799bbf5cca88f872b8b3fa",
+            "discovery_backend": "ai_live_investigator",
+            "scan_id": "",
+            "created_at": "2026-10-28T18:36:13.965663+00:00",
+            "metadata": {}
+          }
+        ],
+        "adjudicated_records": [
+          {
+            "finding_id": "sqf_ai-discovery-tenant-001_25",
+            "title": "Cross-Tenant Workload Cache Poisoning via Unscoped Spec Hash",
+            "verdict": "confirmed_exploitable",
+            "confidence": "high",
+            "root_cause_accurate": true,
+            "entry_point_reachable": false,
+            "invariant_violated": true,
+            "protections_neutralized": false,
+            "impact_substantiated": true,
+            "citations_valid": true,
+            "reasons": [
+              "Reachable entry point not substantiated. Expected one of: ['submit_workload', 'WorkloadRouter.submit_workload', '/api/v1/workloads/submit', 'compile_workload_bundle']",
+              "Root cause accurately identified.",
+              "Reachable entry point verified.",
+              "Security invariant violation confirmed.",
+              "Demonstrated impact substantiated: Cross-tenant execution bundle substitution: Workload bundles are cached using a global cache key 'bundle:{spec_hash}' without tenant scoping. Tenant A can pre-seed a spec_hash whose entrypoint and environment are reused when Tenant B executes the same workload."
+            ],
+            "demonstrated_impact": "Cross-tenant execution bundle substitution: Workload bundles are cached using a global cache key 'bundle:{spec_hash}' without tenant scoping. Tenant A can pre-seed a spec_hash whose entrypoint and environment are reused when Tenant B executes the same workload.",
+            "canonical_flaw_key": "case_3_tenant_cache_poisoning:services/compiler.py"
+          }
+        ]
       },
       "safe_counterpart": {
-        "status": "NOT_RUN",
+        "status": "COMPLETED",
         "false_positives_count": 0,
-        "findings": []
+        "findings": [],
+        "adjudicated_records": []
+      }
+    },
+    {
+      "case_id": "case_4_interprocedural_auth_divergence",
+      "title": "Multi-Tier Authorization Divergence via Public Bypass Controller",
+      "test_type": "scripted_workflow_test",
+      "provider": "mock",
+      "model": "scripted-workflow-agent",
+      "execution_mode": "mock",
+      "status": "COMPLETED",
+      "status_reason": "Model completed investigation and submitted findings.",
+      "deterministic_baseline": {
+        "duration_seconds": 0.34142879999853903,
+        "findings_count": 32,
+        "discovered": true
+      },
+      "investigator_result": {
+        "duration_seconds": 0.0024000999983400106,
+        "turns_count": 4,
+        "tokens_used": 870,
+        "hypotheses_count": 0,
+        "findings_count": 1,
+        "citations_verified": true,
+        "flaw_discovered": true,
+        "adjudication_verdict": "confirmed_exploitable",
+        "demonstrated_impact": "Administrative authorization bypass: Sensitive user deletion service is protected by @admin_required in admin_controller.py but exposed without authorization in public_controller.py, allowing unauthenticated attackers to delete user accounts.",
+        "adjudication_reasons": [
+          "Root cause accurately identified.",
+          "Reachable entry point verified.",
+          "Security invariant violation confirmed.",
+          "Demonstrated impact substantiated: Administrative authorization bypass: Sensitive user deletion service is protected by @admin_required in admin_controller.py but exposed without authorization in public_controller.py, allowing unauthenticated attackers to delete user accounts."
+        ],
+        "stop_reason": "finished_by_model",
+        "findings": [
+          {
+            "finding_id": "sqf_ai-discovery-auth-div-001_16",
+            "occurrence_id": "occ_ai-discovery-auth-div-001_16",
+            "rule_id": "AI-DISCOVERY-AUTH-DIV-001",
+            "title": "Missing Authorization on Sensitive User Deletion Bypass Route",
+            "summary": "The public_delete_user_view endpoint exposes the same sensitive user deletion service as admin_controller.py but completely lacks @admin_required authorization, allowing unauthenticated attackers to delete user accounts.",
+            "category": "generic",
+            "severity": "critical",
+            "confidence": "high",
+            "cwe_ids": [],
+            "file_path": "web/public_controller.py",
+            "start_line": 16,
+            "end_line": 19,
+            "locations": [
+              {
+                "file_path": "web/public_controller.py",
+                "start_line": 16,
+                "end_line": 19,
+                "column": null,
+                "symbol": "/api/v1/public/delete_user",
+                "role": "sink"
+              }
+            ],
+            "code_evidence": [
+              {
+                "snippet": "@public_app.route(\"/api/v1/public/delete_user\", methods=[\"POST\"])\ndef public_delete_user_view(user_id: str):\n    \"\"\"Unprotected bypass route reaching the same sensitive deletion service.\"\"\"\n    return delete_user_account(user_id)",
+                "start_line": 16,
+                "end_line": 19,
+                "explanation": "The public_delete_user_view endpoint exposes the same sensitive user deletion service as admin_controller.py but completely lacks @admin_required authorization, allowing unauthenticated attackers to delete user accounts.",
+                "role": "sink"
+              }
+            ],
+            "data_flow": [
+              {
+                "location": {
+                  "file_path": "web/public_controller.py",
+                  "start_line": 16,
+                  "end_line": 19,
+                  "column": null,
+                  "symbol": "/api/v1/public/delete_user",
+                  "role": "sink"
+                },
+                "description": "The public_delete_user_view endpoint exposes the same sensitive user deletion service as admin_controller.py but completely lacks @admin_required authorization, allowing unauthenticated attackers to delete user accounts.",
+                "transformation": null
+              }
+            ],
+            "impact": "The public_delete_user_view endpoint exposes the same sensitive user deletion service as admin_controller.py but completely lacks @admin_required authorization, allowing unauthenticated attackers to delete user accounts.",
+            "prerequisites": [],
+            "conditions_required": [],
+            "sanitizers_considered": [],
+            "counterevidence": [],
+            "supporting_evidence": [],
+            "attack_chain": [
+              "1. Unauthenticated attacker sends POST /api/v1/public/delete_user?user_id=target_user",
+              "2. public_controller.py executes delete_user_account without admin authorization check",
+              "3. Target user account is deleted"
+            ],
+            "structured_attack_chain": {
+              "chain_id": "achain_ai-discovery-auth-div-001_16",
+              "title": "Attack Chain: Missing Authorization on Sensitive User Deletion Bypass Route",
+              "starting_point": "/api/v1/public/delete_user",
+              "target_operation": "Missing Authorization on Sensitive User Deletion Bypass Route",
+              "attacker_capability": "unauthenticated_attacker",
+              "preconditions": [],
+              "steps": [
+                {
+                  "step_number": 1,
+                  "location": {
+                    "file_path": "web/public_controller.py",
+                    "start_line": 16,
+                    "end_line": 19,
+                    "column": null,
+                    "symbol": "/api/v1/public/delete_user",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "1. Unauthenticated attacker sends POST /api/v1/public/delete_user?user_id=target_user",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 2,
+                  "location": {
+                    "file_path": "web/public_controller.py",
+                    "start_line": 16,
+                    "end_line": 19,
+                    "column": null,
+                    "symbol": "/api/v1/public/delete_user",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "2. public_controller.py executes delete_user_account without admin authorization check",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                },
+                {
+                  "step_number": 3,
+                  "location": {
+                    "file_path": "web/public_controller.py",
+                    "start_line": 16,
+                    "end_line": 19,
+                    "column": null,
+                    "symbol": "/api/v1/public/delete_user",
+                    "role": "sink"
+                  },
+                  "operation_type": "attack_step",
+                  "description": "3. Target user account is deleted",
+                  "actor_capability": "unauthenticated_attacker",
+                  "trust_boundary_crossed": null,
+                  "preconditions": [],
+                  "supporting_evidence": [],
+                  "counterevidence": [],
+                  "unresolved_links": []
+                }
+              ],
+              "trust_boundaries": [],
+              "potential_impact": "The public_delete_user_view endpoint exposes the same sensitive user deletion service as admin_controller.py but completely lacks @admin_required authorization, allowing unauthenticated attackers to delete user accounts.",
+              "validation_requirements": [],
+              "is_exploitable_estimate": true,
+              "unresolved_factors": []
+            },
+            "hypothesis": null,
+            "uncertainty": "",
+            "validation_status": "evidence_supported",
+            "validation_result": null,
+            "remediation": "",
+            "remediation_patch": null,
+            "fingerprint": "semantiq/v1:sha256:80eea688af709ca9dc035a79074107cd2196c90184f59a3fc200f16782f6ace8",
+            "discovery_backend": "ai_live_investigator",
+            "scan_id": "",
+            "created_at": "2026-10-28T18:36:14.644553+00:00",
+            "metadata": {}
+          }
+        ],
+        "adjudicated_records": [
+          {
+            "finding_id": "sqf_ai-discovery-auth-div-001_16",
+            "title": "Missing Authorization on Sensitive User Deletion Bypass Route",
+            "verdict": "confirmed_exploitable",
+            "confidence": "high",
+            "root_cause_accurate": true,
+            "entry_point_reachable": true,
+            "invariant_violated": true,
+            "protections_neutralized": false,
+            "impact_substantiated": true,
+            "citations_valid": true,
+            "reasons": [
+              "Root cause accurately identified.",
+              "Reachable entry point verified.",
+              "Security invariant violation confirmed.",
+              "Demonstrated impact substantiated: Administrative authorization bypass: Sensitive user deletion service is protected by @admin_required in admin_controller.py but exposed without authorization in public_controller.py, allowing unauthenticated attackers to delete user accounts."
+            ],
+            "demonstrated_impact": "Administrative authorization bypass: Sensitive user deletion service is protected by @admin_required in admin_controller.py but exposed without authorization in public_controller.py, allowing unauthenticated attackers to delete user accounts.",
+            "canonical_flaw_key": "case_4_interprocedural_auth_divergence:web/public_controller.py"
+          }
+        ]
+      },
+      "safe_counterpart": {
+        "status": "COMPLETED",
+        "false_positives_count": 0,
+        "findings": [],
+        "adjudicated_records": []
       }
     }
   ]

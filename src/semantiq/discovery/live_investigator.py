@@ -125,6 +125,19 @@ class LiveAIInvestigator:
         if self.storage:
             with contextlib.suppress(Exception):
                 prior_memory = self.storage.load_latest_repository_memory(str(self.repository_root))
+                if (
+                    prior_memory
+                    and self.source_revision
+                    and prior_memory.source_revision
+                    and prior_memory.source_revision != self.source_revision
+                ):
+                    logger.info(
+                        "Source revision mismatch (current=%s, cached=%s). Invalidating stale memory.",
+                        self.source_revision,
+                        prior_memory.source_revision,
+                    )
+                    self.storage.invalidate_stale_memory(str(self.repository_root), self.source_revision)
+                    prior_memory = None
 
         executor = InvestigationToolExecutor(
             repository_root=self.repository_root,

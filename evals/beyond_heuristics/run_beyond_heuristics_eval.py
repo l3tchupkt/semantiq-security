@@ -26,10 +26,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Ensure semantiq package is on path
+# Ensure semantiq package and repo root are on path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
+from evals.beyond_heuristics.adjudicator import AdjudicationVerdict, FindingAdjudicator
+from evals.beyond_heuristics.ground_truth_catalog import GROUND_TRUTH_CATALOG
 from semantiq.config import AIConfig, ScanConfig
 from semantiq.discovery.engine import VulnerabilityDiscoveryEngine
 from semantiq.discovery.live_investigator import LiveAIInvestigator
@@ -103,6 +107,28 @@ GROUND_TRUTH_CASES: dict[str, dict[str, Any]] = {
         ),
         "mitigation_module": "services/compiler.py",
         "expected_category": "broken_tenant_isolation",
+    },
+    "case_4_interprocedural_auth_divergence": {
+        "case_id": "case_4_interprocedural_auth_divergence",
+        "title": "Multi-Tier Authorization Divergence via Public Bypass Controller",
+        "vulnerable_fixture": REPO_ROOT / "tests" / "fixtures" / "interprocedural_app",
+        "safe_fixture": REPO_ROOT / "tests" / "fixtures" / "interprocedural_safe",
+        "primary_flaw_file": "web/public_controller.py",
+        "affected_modules": [
+            "web/admin_controller.py",
+            "web/public_controller.py",
+            "services/user_service.py",
+            "dao/document_dao.py",
+            "web/document_controller.py",
+            "services/document_service.py",
+        ],
+        "invariant_violation": (
+            "Administrative authorization bypass: Sensitive user deletion service is protected by "
+            "@admin_required in admin_controller.py but exposed without authorization in public_controller.py, "
+            "allowing unauthenticated attackers to delete user accounts."
+        ),
+        "mitigation_module": "web/public_controller.py",
+        "expected_category": "missing_authorization",
     },
 }
 
@@ -643,6 +669,105 @@ def create_simulated_case3_safe_tool_script() -> list[ProviderToolResponse]:
     ]
 
 
+def create_simulated_case4_tool_script() -> list[ProviderToolResponse]:
+    """Provides a scripted multi-turn tool sequence for Case 4 (Interprocedural Route Divergence)."""
+    return [
+        ProviderToolResponse(
+            content="Starting architectural overview on multi-controller application.",
+            tool_calls=[
+                InvestigationToolCall(call_id="c4_01", tool_name="get_repository_overview", arguments={}),
+                InvestigationToolCall(call_id="c4_02", tool_name="list_repository_files", arguments={"directory": "web"}),
+            ],
+            tokens_used=180,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Comparing route authorization between web/admin_controller.py and web/public_controller.py.",
+            tool_calls=[
+                InvestigationToolCall(call_id="c4_03", tool_name="query_authorization_boundary", arguments={"target": "admin_delete_user_view"}),
+                InvestigationToolCall(call_id="c4_04", tool_name="query_authorization_boundary", arguments={"target": "public_delete_user_view"}),
+            ],
+            tokens_used=230,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Tracing alternate entry points to sensitive user deletion service.",
+            tool_calls=[
+                InvestigationToolCall(call_id="c4_05", tool_name="query_alternate_entry_points", arguments={"sink_symbol": "delete_user_account"}),
+            ],
+            tokens_used=170,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Submitting verified finding for authorization divergence / unauthenticated route bypass.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c4_06",
+                    tool_name="finish_investigation",
+                    arguments={
+                        "summary": "Discovered authorization divergence: public_controller.py exposes delete_user_account without authorization.",
+                        "findings": [
+                            {
+                                "title": "Missing Authorization on Sensitive User Deletion Bypass Route",
+                                "rule_id": "AI-DISCOVERY-AUTH-DIV-001",
+                                "file_path": "web/public_controller.py",
+                                "start_line": 16,
+                                "end_line": 19,
+                                "summary": (
+                                    "The public_delete_user_view endpoint exposes the same sensitive user deletion service "
+                                    "as admin_controller.py but completely lacks @admin_required authorization, allowing "
+                                    "unauthenticated attackers to delete user accounts."
+                                ),
+                                "category": "missing_authorization",
+                                "severity": "critical",
+                                "confidence": "high",
+                                "entry_point": "/api/v1/public/delete_user",
+                                "is_exploitable": True,
+                                "attack_chain_steps": [
+                                    "1. Unauthenticated attacker sends POST /api/v1/public/delete_user?user_id=target_user",
+                                    "2. public_controller.py executes delete_user_account without admin authorization check",
+                                    "3. Target user account is deleted",
+                                ],
+                            }
+                        ],
+                    },
+                )
+            ],
+            tokens_used=290,
+            finish_reason="tool_calls",
+        ),
+    ]
+
+
+def create_simulated_case4_safe_tool_script() -> list[ProviderToolResponse]:
+    """Provides a scripted multi-turn tool sequence for Case 4 Safe counterpart."""
+    return [
+        ProviderToolResponse(
+            content="Inspecting controllers in safe implementation.",
+            tool_calls=[
+                InvestigationToolCall(call_id="c4_s_01", tool_name="query_authorization_boundary", arguments={"target": "public_delete_user_view"}),
+            ],
+            tokens_used=130,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Mitigating control verified: public_delete_user_view enforces @admin_required. Concluding safe run.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c4_s_02",
+                    tool_name="finish_investigation",
+                    arguments={
+                        "summary": "Safe counterpart inspected: all routes reaching delete_user_account enforce authorization.",
+                        "findings": [],
+                    },
+                )
+            ],
+            tokens_used=120,
+            finish_reason="tool_calls",
+        ),
+    ]
+
+
 async def evaluate_single_case(
     case_spec: dict[str, Any],
     provider_name: str,
@@ -720,8 +845,10 @@ async def evaluate_single_case(
             script = create_simulated_case1_tool_script()
         elif case_id == "case_2_reconciliation_race":
             script = create_simulated_case2_tool_script()
-        else:
+        elif case_id == "case_3_tenant_cache_poisoning":
             script = create_simulated_case3_tool_script()
+        else:
+            script = create_simulated_case4_tool_script()
         ai_provider = MockAIProvider(
             config=AIConfig(enabled=True, provider="mock", model="scripted-workflow-agent"),
             tool_script=script,
@@ -767,8 +894,10 @@ async def evaluate_single_case(
             safe_script = create_simulated_case1_safe_tool_script()
         elif case_id == "case_2_reconciliation_race":
             safe_script = create_simulated_case2_safe_tool_script()
-        else:
+        elif case_id == "case_3_tenant_cache_poisoning":
             safe_script = create_simulated_case3_safe_tool_script()
+        else:
+            safe_script = create_simulated_case4_safe_tool_script()
         safe_provider: BaseAIProvider = MockAIProvider(
             config=AIConfig(enabled=True, provider="mock", model="scripted-workflow-agent"),
             tool_script=safe_script,
@@ -791,24 +920,74 @@ async def evaluate_single_case(
     )
 
     safe_trace = await safe_investigator.investigate(prompt_hint=None)
-    safe_fp_count = len(safe_trace.final_findings)
-    print(f"  Safe counterpart findings: {safe_fp_count} (Expected: 0 false positives)")
-    for sf in safe_trace.final_findings:
-        print(f"    * FP: [{sf.rule_id}] {sf.title} at {sf.file_path}:{sf.start_line}-{sf.end_line}")
 
-    # 5. Result Scoring against Hidden Ground Truth
-    flaw_discovered = False
-    verified_location = False
-    invariant_described = False
+    # 5. Independent Multi-Factor Finding Adjudication
+    adjudicator = FindingAdjudicator(GROUND_TRUTH_CATALOG)
+    adjudications = adjudicator.adjudicate(
+        case_id=case_id,
+        repository_root=vuln_fixture,
+        findings=ai_trace.final_findings,
+        is_safe_counterpart=False,
+    )
+    safe_adjudications = adjudicator.adjudicate(
+        case_id=case_id,
+        repository_root=safe_fixture,
+        findings=safe_trace.final_findings,
+        is_safe_counterpart=True,
+    )
 
-    for f in ai_trace.final_findings:
-        if case_spec["primary_flaw_file"] in f.file_path or any(mod in f.file_path for mod in case_spec.get("affected_modules", [])):
-            verified_location = True
-            text_to_check = (f.summary + " " + f.title + " " + " ".join(f.supporting_evidence)).lower()
-            if any(term in text_to_check for term in ["scope", "authority", "privilege", "atomic", "race", "lock", "concurren", "cache", "tenant", "poison", "isolation"]):
-                invariant_described = True
-                flaw_discovered = True
-                break
+    # Determine composite case verdict
+    case_verdict = "MISSED"
+    demonstrated_impact = "none"
+    reasons: list[str] = []
+
+    if ai_trace.status == "NOT_RUN":
+        case_verdict = "NOT_RUN"
+        reasons = [ai_trace.status_reason]
+    elif any(a.verdict == AdjudicationVerdict.CONFIRMED_EXPLOITABLE for a in adjudications):
+        case_verdict = AdjudicationVerdict.CONFIRMED_EXPLOITABLE.value
+        top_adj = next(a for a in adjudications if a.verdict == AdjudicationVerdict.CONFIRMED_EXPLOITABLE)
+        demonstrated_impact = top_adj.demonstrated_impact
+        reasons = top_adj.reasons
+    elif any(a.verdict == AdjudicationVerdict.CONFIRMED_INVARIANT_VIOLATION_IMPACT_UNPROVEN for a in adjudications):
+        case_verdict = AdjudicationVerdict.CONFIRMED_INVARIANT_VIOLATION_IMPACT_UNPROVEN.value
+        top_adj = next(a for a in adjudications if a.verdict == AdjudicationVerdict.CONFIRMED_INVARIANT_VIOLATION_IMPACT_UNPROVEN)
+        demonstrated_impact = top_adj.demonstrated_impact
+        reasons = top_adj.reasons
+    elif any(a.verdict == AdjudicationVerdict.PARTIAL_EVIDENCE for a in adjudications):
+        case_verdict = AdjudicationVerdict.PARTIAL_EVIDENCE.value
+        top_adj = next(a for a in adjudications if a.verdict == AdjudicationVerdict.PARTIAL_EVIDENCE)
+        demonstrated_impact = top_adj.demonstrated_impact
+        reasons = top_adj.reasons
+    elif any(a.verdict == AdjudicationVerdict.NOT_EXPLOITABLE_UNDER_OBSERVED_ASSUMPTIONS for a in adjudications):
+        case_verdict = AdjudicationVerdict.NOT_EXPLOITABLE_UNDER_OBSERVED_ASSUMPTIONS.value
+        top_adj = next(a for a in adjudications if a.verdict == AdjudicationVerdict.NOT_EXPLOITABLE_UNDER_OBSERVED_ASSUMPTIONS)
+        demonstrated_impact = top_adj.demonstrated_impact
+        reasons = top_adj.reasons
+    elif any(a.verdict == AdjudicationVerdict.REJECTED_WRONG_ROOT_CAUSE for a in adjudications):
+        case_verdict = AdjudicationVerdict.REJECTED_WRONG_ROOT_CAUSE.value
+        top_adj = next(a for a in adjudications if a.verdict == AdjudicationVerdict.REJECTED_WRONG_ROOT_CAUSE)
+        demonstrated_impact = top_adj.demonstrated_impact
+        reasons = top_adj.reasons
+    elif ai_trace.final_findings:
+        case_verdict = adjudications[0].verdict.value if adjudications else "REJECTED_UNKNOWN"
+        reasons = adjudications[0].reasons if adjudications else []
+    else:
+        case_verdict = "MISSED"
+        reasons = ["No findings submitted by investigator."]
+
+    # Safe counterpart false positives
+    safe_fps = [
+        a for a in safe_adjudications
+        if a.verdict in (
+            AdjudicationVerdict.CONFIRMED_EXPLOITABLE,
+            AdjudicationVerdict.CONFIRMED_INVARIANT_VIOLATION_IMPACT_UNPROVEN,
+        )
+    ]
+    safe_fp_count = len(safe_fps)
+    print(f"  Safe counterpart findings: {len(safe_trace.final_findings)} | Adjudicated False Positives: {safe_fp_count} (Expected: 0)")
+    for sf in safe_fps:
+        print(f"    * FP: {sf.title} - {sf.verdict}")
 
     return {
         "case_id": case_id,
@@ -831,16 +1010,22 @@ async def evaluate_single_case(
             "hypotheses_count": len(ai_trace.hypotheses_created),
             "findings_count": len(ai_trace.final_findings),
             "citations_verified": ai_trace.citations_verified,
-            "flaw_discovered": flaw_discovered,
-            "verified_location": verified_location,
-            "invariant_described": invariant_described,
+            "flaw_discovered": case_verdict in (
+                AdjudicationVerdict.CONFIRMED_EXPLOITABLE.value,
+                AdjudicationVerdict.CONFIRMED_INVARIANT_VIOLATION_IMPACT_UNPROVEN.value,
+            ),
+            "adjudication_verdict": case_verdict,
+            "demonstrated_impact": demonstrated_impact,
+            "adjudication_reasons": reasons,
             "stop_reason": ai_trace.stop_reason,
             "findings": [f.model_dump() for f in ai_trace.final_findings],
+            "adjudicated_records": [a.to_dict() for a in adjudications],
         },
         "safe_counterpart": {
             "status": safe_trace.status,
             "false_positives_count": safe_fp_count,
             "findings": [f.model_dump() for f in safe_trace.final_findings],
+            "adjudicated_records": [a.to_dict() for a in safe_adjudications],
         },
     }
 
@@ -875,22 +1060,21 @@ async def run_evaluation(
         case_results.append(res)
 
     print("\n" + "=" * 80)
-    print("EVALUATION SUMMARY & COMPARATIVE AUDIT TABLE")
+    print("EVALUATION SUMMARY & INDEPENDENT ADJUDICATION TABLE")
     print("=" * 80)
-    print(f"{'Case':<32} | {'Mode':<10} | {'Status':<10} | {'Det Base':<10} | {'Investigator':<12} | {'Citations':<10} | {'FP (Safe)':<9}")
-    print("-" * 105)
+    print(f"{'Case':<40} | {'Mode':<10} | {'Status':<10} | {'Det Base':<10} | {'Adjudication':<30} | {'FP (Safe)':<9}")
+    print("-" * 122)
 
     for r in case_results:
         inv = r["investigator_result"]
         det = r["deterministic_baseline"]
         safe = r["safe_counterpart"]
         det_str = "DETECTED" if det["discovered"] else "MISSED"
-        inv_str = "DISCOVERED" if inv["flaw_discovered"] else ("NOT_RUN" if r["status"] == "NOT_RUN" else "MISSED")
-        cit_str = "VALID" if inv["citations_verified"] else ("N/A" if r["status"] == "NOT_RUN" else "INVALID")
+        adj_str = inv.get("adjudication_verdict", "MISSED")
         print(
-            f"{r['case_id']:<32} | {r['execution_mode']:<10} | {r['status']:<10} | {det_str:<10} | {inv_str:<12} | {cit_str:<10} | {safe['false_positives_count']:<9}"
+            f"{r['case_id']:<40} | {r['execution_mode']:<10} | {r['status']:<10} | {det_str:<10} | {adj_str:<30} | {safe['false_positives_count']:<9}"
         )
-    print("=" * 105)
+    print("=" * 122)
 
     report: dict[str, Any] = {
         "evaluation_name": "beyond_heuristics_multi_case",
