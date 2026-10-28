@@ -6,6 +6,7 @@ malformed syntax, ignored directories, and bounded timeout/coverage reporting.
 
 from __future__ import annotations
 
+import statistics
 import time
 from pathlib import Path
 
@@ -164,7 +165,14 @@ def test_malformed_syntax_and_partial_coverage(tmp_path: Path) -> None:
 
 
 def test_large_synthetic_repository_scalability(tmp_path: Path) -> None:
-    """Verify performance and caching on a synthetic repository with 30 modules."""
+    """Verify functional caching and performance on a synthetic repository with 30 modules.
+
+    Separates:
+      1. Functional cache correctness (zero content reads/reparsing on warm unchanged pass).
+      2. Invalidation semantics (changed file is reparsed, unchanged files remain cached).
+      3. Call graph / auth boundary non-duplication.
+      4. Optimization efficiency (repeated measurements with noise tolerance).
+    """
     files: list[str] = []
     for i in range(30):
         fname = f"module_{i:02d}.py"
@@ -186,19 +194,77 @@ def runner_{i}(data: str) -> str:
 
     intel = RepositoryIntelligence(tmp_path)
 
-    # First pass: cold cache
+    # -------------------------------------------------------------------------
+    # Pass 1: Cold Cache (Full read & AST parse)
+    # -------------------------------------------------------------------------
     t0 = time.perf_counter()
     intel.index_repository(files)
     cold_dur = time.perf_counter() - t0
 
+    # Functional Cold Assertions
     assert len(intel.symbols) == 30
     assert len(intel._content_cache) == 30
-
-    # Second pass: warm cache
-    t1 = time.perf_counter()
-    intel.index_repository(files)
-    warm_dur = time.perf_counter() - t1
-
-    # Warm pass must be faster than cold pass
-    assert warm_dur <= cold_dur
     assert len(intel.file_metadata) == 30
+    assert intel.content_reads_count == 30
+    assert intel.ast_parsed_count == 30
+    assert intel.cached_file_hits_count == 0
+    # Each module has 4 calls (encode, sha256, hexdigest, helper_i) -> 30 * 4 = 120
+    assert len(intel.call_graph) == 120
+
+    # -------------------------------------------------------------------------
+    # Pass 2: Warm Cache (Unchanged files: Zero content reads, Zero AST parse)
+    # -------------------------------------------------------------------------
+    warm_durations: list[float] = []
+    for _ in range(3):
+        t_start = time.perf_counter()
+        intel.index_repository(files)
+        warm_durations.append(time.perf_counter() - t_start)
+
+    # Functional Warm Assertions
+    assert intel.content_reads_count == 0, "Unchanged files must avoid unnecessary disk content reads"
+    assert intel.ast_parsed_count == 0, "Unchanged files must avoid unnecessary AST reparsing"
+    assert intel.cached_file_hits_count == 30, "All 30 unchanged files must be resolved from cache"
+    assert len(intel.symbols) == 30
+    assert len(intel._content_cache) == 30
+    assert len(intel.file_metadata) == 30
+    # Crucial correctness guarantee: Call edges must not accumulate duplicate entries on re-index
+    assert len(intel.call_graph) == 120
+
+    # -------------------------------------------------------------------------
+    # Pass 3: Incremental Invalidation (Modify 1 file)
+    # -------------------------------------------------------------------------
+    mod_path = tmp_path / "module_00.py"
+    mod_path.write_text(
+        """
+import hashlib
+
+def helper_00(val: str) -> str:
+    return "updated_helper"
+
+def new_feature_00(val: str) -> str:
+    return "brand_new_symbol"
+""",
+        encoding="utf-8",
+    )
+
+    intel.index_repository(files)
+
+    # Only 1 file modified -> exactly 1 disk read and 1 AST parse; 29 served from cache
+    assert intel.content_reads_count == 1, "Only modified file should trigger a content read"
+    assert intel.ast_parsed_count == 1, "Only modified file should be reparsed"
+    assert intel.cached_file_hits_count == 29, "29 unchanged files must remain served from cache"
+    mod_symbols = {s.name for s in intel.symbols["module_00.py"]}
+    assert "new_feature_00" in mod_symbols, "Modified file must reflect new AST symbols"
+    assert "runner_0" not in mod_symbols, "Removed function must be purged from symbol table"
+
+    # -------------------------------------------------------------------------
+    # Pass 4: Performance & Optimization (Noise-Tolerant Multi-Trial Median)
+    # -------------------------------------------------------------------------
+    warm_median = statistics.median(warm_durations)
+    # With 0 disk content reads and 0 AST parsing on warm pass, warm median should
+    # comfortably beat cold duration under standard conditions.
+    # We apply a 1.25x noise tolerance factor to prevent CI virtualized scheduling spikes
+    # from causing false alarms while still verifying caching optimization.
+    assert warm_median <= cold_dur * 1.25, (
+        f"Warm cache median ({warm_median:.6f}s) exceeded cold time ({cold_dur:.6f}s) with noise tolerance."
+    )

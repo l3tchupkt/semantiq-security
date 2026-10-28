@@ -86,6 +86,22 @@ class FileIndexMetadata:
     language: str
 
 
+@dataclass
+class CachedFileEntry:
+    """Internal cache entry storing per-file analysis artifacts and filesystem timestamps."""
+
+    sha256: str
+    mtime_ns: int
+    size_bytes: int
+    language: str
+    symbols: list[IndexedSymbol] = field(default_factory=list)
+    imports: list[IndexedImport] = field(default_factory=list)
+    auth_boundaries: list[AuthBoundary] = field(default_factory=list)
+    call_edges: list[CallEdge] = field(default_factory=list)
+    security_sinks: list[SecuritySinkLocation] = field(default_factory=list)
+    unresolved_calls: list[UnresolvedCall] = field(default_factory=list)
+
+
 class RepositoryIntelligence:
     """Comprehensive repository intelligence model distinguishing facts, inferences, and hypotheses."""
 
@@ -104,32 +120,86 @@ class RepositoryIntelligence:
         self.global_middleware: list[str] = []
         self.parsed_files_count: int = 0
         self.failed_parsing_files: list[str] = []
-        # Incremental scan content-hash cache: rel_path -> (sha256, symbols, imports, auth_boundaries)
+
+        # Granular incremental indexing cache
+        self._file_cache: dict[str, CachedFileEntry] = {}
+        # Backward-compatibility alias: rel_path -> (sha256, symbols, imports, auth_boundaries)
         self._content_cache: dict[str, tuple[str, list[IndexedSymbol], list[IndexedImport], list[AuthBoundary]]] = {}
 
+        # Performance and cache observability counters (per index pass)
+        self.content_reads_count: int = 0
+        self.cached_file_hits_count: int = 0
+        self.ast_parsed_count: int = 0
+        self.ast_cached_count: int = 0
+
+    def invalidate_file_cache(self, rel_path: str) -> None:
+        """Explicitly invalidate cached analysis for a modified or removed file."""
+        self._file_cache.pop(rel_path, None)
+        self._content_cache.pop(rel_path, None)
+        self.file_metadata.pop(rel_path, None)
+        self.symbols.pop(rel_path, None)
+        self.imports.pop(rel_path, None)
+
     def index_repository(self, in_scope_files: list[str]) -> None:
-        """Deterministically index all in-scope files in the repository using content-hash caching."""
+        """Deterministically index all in-scope files using stat-based and content-hash caching."""
+        self.content_reads_count = 0
+        self.cached_file_hits_count = 0
+        self.ast_parsed_count = 0
+        self.ast_cached_count = 0
+
+        active_files: list[str] = []
+        failed_files: list[str] = []
+
         for rel_path in in_scope_files:
             try:
                 full_path = resolve_safe_path(self.repo_root, rel_path)
             except Exception:
                 continue
 
-            if not full_path.exists() or not full_path.is_file():
+            try:
+                st = full_path.stat()
+            except OSError:
+                self.invalidate_file_cache(rel_path)
                 continue
 
-            try:
-                content_bytes = full_path.read_bytes()
-                sha = hashlib.sha256(content_bytes).hexdigest()
-                content = content_bytes.decode("utf-8", errors="replace")
-            except OSError:
+            if not full_path.is_file():
+                self.invalidate_file_cache(rel_path)
                 continue
+
+            active_files.append(rel_path)
 
             lang = "python" if rel_path.endswith((".py", ".pyi")) else (
                 "javascript" if rel_path.endswith((".js", ".jsx", ".mjs", ".cjs")) else (
                     "typescript" if rel_path.endswith((".ts", ".tsx")) else "other"
                 )
             )
+
+            # Check if we have an existing cache entry whose filesystem stat matches
+            cached = self._file_cache.get(rel_path)
+            if cached and cached.mtime_ns == st.st_mtime_ns and cached.size_bytes == st.st_size:
+                # Fast path: Zero disk content read, Zero AST parse!
+                self.cached_file_hits_count += 1
+                self.ast_cached_count += 1
+                self.file_metadata[rel_path] = FileIndexMetadata(
+                    relative_path=rel_path,
+                    sha256=cached.sha256,
+                    size_bytes=cached.size_bytes,
+                    language=cached.language,
+                )
+                self.symbols[rel_path] = list(cached.symbols)
+                self.imports[rel_path] = list(cached.imports)
+                continue
+
+            # Slow path / Content check: Read file content
+            try:
+                content_bytes = full_path.read_bytes()
+                sha = hashlib.sha256(content_bytes).hexdigest()
+                content = content_bytes.decode("utf-8", errors="replace")
+            except OSError:
+                self.invalidate_file_cache(rel_path)
+                continue
+
+            self.content_reads_count += 1
 
             self.file_metadata[rel_path] = FileIndexMetadata(
                 relative_path=rel_path,
@@ -139,24 +209,59 @@ class RepositoryIntelligence:
             )
 
             if lang == "python":
-                # Check incremental content cache
-                cached = self._content_cache.get(rel_path)
-                if cached and cached[0] == sha:
-                    self.symbols[rel_path] = list(cached[1])
-                    self.imports[rel_path] = list(cached[2])
-                    self.auth_boundaries.extend(cached[3])
-                    self.parsed_files_count += 1
+                # Check if sha256 matches cached content (e.g. timestamp changed but content is identical)
+                if cached and cached.sha256 == sha:
+                    cached.mtime_ns = st.st_mtime_ns
+                    cached.size_bytes = st.st_size
+                    self.ast_cached_count += 1
+                    self.symbols[rel_path] = list(cached.symbols)
+                    self.imports[rel_path] = list(cached.imports)
                 else:
-                    self._index_python_file(rel_path, content, sha)
+                    self.ast_parsed_count += 1
+                    entry = self._index_python_file(
+                        rel_path=rel_path,
+                        source_code=content,
+                        sha=sha,
+                        mtime_ns=st.st_mtime_ns,
+                        size_bytes=len(content_bytes),
+                        lang=lang,
+                    )
+                    if entry is None:
+                        failed_files.append(rel_path)
 
-    def _index_python_file(self, rel_path: str, source_code: str, sha: str = "") -> None:
+        self.failed_parsing_files = failed_files
+
+        # Reassemble aggregate lists cleanly from active in-scope cached files
+        self.auth_boundaries = [
+            b for f in active_files if f in self._file_cache for b in self._file_cache[f].auth_boundaries
+        ]
+        self.call_graph = [
+            c for f in active_files if f in self._file_cache for c in self._file_cache[f].call_edges
+        ]
+        self.security_sinks = [
+            s for f in active_files if f in self._file_cache for s in self._file_cache[f].security_sinks
+        ]
+        self.unresolved_calls = [
+            u for f in active_files if f in self._file_cache for u in self._file_cache[f].unresolved_calls
+        ]
+
+        self.parsed_files_count = len([f for f in active_files if f in self.symbols])
+
+    def _index_python_file(
+        self,
+        rel_path: str,
+        source_code: str,
+        sha: str = "",
+        mtime_ns: int = 0,
+        size_bytes: int = 0,
+        lang: str = "python",
+    ) -> CachedFileEntry | None:
         """Parse Python source and extract facts (symbols, imports, calls, sinks, routes)."""
         try:
             tree = ast.parse(source_code, filename=rel_path)
-            self.parsed_files_count += 1
         except (SyntaxError, ValueError):
             self.failed_parsing_files.append(rel_path)
-            return
+            return None
 
         file_symbols: list[IndexedSymbol] = []
         file_imports: list[IndexedImport] = []
@@ -236,11 +341,37 @@ class RepositoryIntelligence:
 
         self.symbols[rel_path] = file_symbols
         self.imports[rel_path] = file_imports
+
+        file_call_edges: list[CallEdge] = []
+        file_security_sinks: list[SecuritySinkLocation] = []
+        file_unresolved_calls: list[UnresolvedCall] = []
+
+        # Walk entire file AST for calls and sinks
+        self._index_file_calls_and_sinks(
+            tree,
+            rel_path,
+            out_calls=file_call_edges,
+            out_sinks=file_security_sinks,
+            out_unresolved=file_unresolved_calls,
+        )
+
+        entry = CachedFileEntry(
+            sha256=sha,
+            mtime_ns=mtime_ns,
+            size_bytes=size_bytes,
+            language=lang,
+            symbols=file_symbols,
+            imports=file_imports,
+            auth_boundaries=file_auth_boundaries,
+            call_edges=file_call_edges,
+            security_sinks=file_security_sinks,
+            unresolved_calls=file_unresolved_calls,
+        )
+        self._file_cache[rel_path] = entry
         if sha:
             self._content_cache[rel_path] = (sha, file_symbols, file_imports, file_auth_boundaries)
 
-        # Walk entire file AST for calls and sinks
-        self._index_file_calls_and_sinks(tree, rel_path)
+        return entry
 
     def _index_function(
         self,
@@ -313,7 +444,6 @@ class RepositoryIntelligence:
                 is_admin_only=is_admin,
                 is_tenant_scoped=is_tenant,
             )
-            self.auth_boundaries.append(boundary)
             out_auth_boundaries.append(boundary)
 
         out_symbols.append(
@@ -343,7 +473,18 @@ class RepositoryIntelligence:
             return self._format_decorator(node.func)
         return ""
 
-    def _index_file_calls_and_sinks(self, tree: ast.AST, rel_path: str) -> None:
+    def _index_file_calls_and_sinks(
+        self,
+        tree: ast.AST,
+        rel_path: str,
+        out_calls: list[CallEdge] | None = None,
+        out_sinks: list[SecuritySinkLocation] | None = None,
+        out_unresolved: list[UnresolvedCall] | None = None,
+    ) -> None:
+        target_calls = out_calls if out_calls is not None else self.call_graph
+        target_sinks = out_sinks if out_sinks is not None else self.security_sinks
+        target_unresolved = out_unresolved if out_unresolved is not None else self.unresolved_calls
+
         class CallVisitor(ast.NodeVisitor):
             def __init__(self, outer: RepositoryIntelligence) -> None:
                 self.outer = outer
@@ -379,7 +520,7 @@ class RepositoryIntelligence:
 
                 # Record call edge or unresolved call
                 if call_name and call_name != "getattr":
-                    self.outer.call_graph.append(
+                    target_calls.append(
                         CallEdge(
                             caller_file=rel_path,
                             caller_symbol=self.curr,
@@ -392,7 +533,7 @@ class RepositoryIntelligence:
                     if hasattr(ast, "unparse"):
                         with contextlib.suppress(Exception):
                             expr_name = ast.unparse(node)
-                    self.outer.unresolved_calls.append(
+                    target_unresolved.append(
                         UnresolvedCall(
                             file_path=rel_path,
                             line=lineno,
@@ -404,7 +545,7 @@ class RepositoryIntelligence:
 
                 # Record security sink facts
                 if call_name in {"execute", "executemany"}:
-                    self.outer.security_sinks.append(
+                    target_sinks.append(
                         SecuritySinkLocation(
                             category=VulnerabilityCategory.SQL_INJECTION,
                             rule_id="SQ-PY-002",
@@ -417,7 +558,7 @@ class RepositoryIntelligence:
                         )
                     )
                 elif call_name in {"system", "popen"}:
-                    self.outer.security_sinks.append(
+                    target_sinks.append(
                         SecuritySinkLocation(
                             category=VulnerabilityCategory.COMMAND_INJECTION,
                             rule_id="SQ-PY-001",
@@ -430,7 +571,7 @@ class RepositoryIntelligence:
                         )
                     )
                 elif call_name in {"eval", "exec"}:
-                    self.outer.security_sinks.append(
+                    target_sinks.append(
                         SecuritySinkLocation(
                             category=VulnerabilityCategory.CODE_INJECTION,
                             rule_id="SQ-PY-009",
@@ -447,7 +588,7 @@ class RepositoryIntelligence:
                     if func_val is not None:
                         val_name = getattr(func_val, "id", "")
                         if val_name in {"pickle", "_pickle", "cPickle", "yaml"}:
-                            self.outer.security_sinks.append(
+                            target_sinks.append(
                                 SecuritySinkLocation(
                                     category=VulnerabilityCategory.UNSAFE_DESERIALIZATION,
                                     rule_id="SQ-PY-003",
