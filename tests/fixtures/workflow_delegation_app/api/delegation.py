@@ -29,8 +29,6 @@ class DelegationRouter:
         delegatee_id = request_data.get("delegatee_id", "")
         requested_scope = request_data.get("requested_role_scope", "standard")
 
-        # Flaw: No check verifying that caller possesses the requested_role_scope.
-        # Any authenticated user can issue delegation tokens granting 'admin' role scope.
         token = coordinator.issue_delegation_token(
             delegator_id=caller_id,
             delegatee_id=delegatee_id,

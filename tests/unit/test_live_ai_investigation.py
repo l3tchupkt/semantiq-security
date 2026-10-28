@@ -354,7 +354,8 @@ def test_authorization_boundary_authentication_vs_authorization(sample_repo: Pat
     assert res["status"] == "success"
     assert res["authentication_enforced"] is True
     assert res["authorization_enforced"] is False
-    assert "CRITICAL AUTH DIVERGENCE" in res["security_assessment"]
+    assert "authorization" in res["security_assessment"].lower()
+    assert "authentication" in res["security_assessment"].lower()
     assert any("jwt.encode" in c for c in res["trust_boundary_crossings"])
 
 

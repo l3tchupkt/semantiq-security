@@ -9,6 +9,7 @@ and synthesizes verifiable attack chains.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -120,12 +121,18 @@ class LiveAIInvestigator:
                 stop_reason="missing_provider",
             )
 
+        prior_memory = None
+        if self.storage:
+            with contextlib.suppress(Exception):
+                prior_memory = self.storage.load_latest_repository_memory(str(self.repository_root))
+
         executor = InvestigationToolExecutor(
             repository_root=self.repository_root,
             intelligence=self.intelligence,
             graph=self.graph,
             storage=self.storage,
             source_revision=self.source_revision,
+            prior_memory=prior_memory,
         )
 
         trace = InvestigationTrace(
@@ -148,9 +155,14 @@ class LiveAIInvestigator:
             "2. Formulate Hypotheses: Propose specific, testable vulnerability hypotheses using record_hypothesis.\n"
             "3. Ground Truth Verification: Use get_source_excerpt to inspect real implementation code at specific lines.\n"
             "4. Follow Interprocedural Paths: Query callers, callees, data-flow, and authorization boundaries across components.\n"
-            "5. Actively Search for Counterevidence: Look for input validation, sanitizers, authorization middleware, "
+            "5. Trace Component Interactions & State Lifecycles: Use query_component_interactions to follow asynchronous queues and workers. "
+            "Use query_state_transitions to inspect entity state checks, mutations, and concurrency locks.\n"
+            "6. Persistent Investigation Memory: Use query_investigation_memory to recall prior hypotheses and explored paths across sessions.\n"
+            "7. Actively Search for Counterevidence: Look for input validation, sanitizers, authorization middleware, "
             "or state machine checks. If found, challenge the hypothesis using challenge_hypothesis with disposition 'mitigated' or 'false_positive'.\n"
-            "6. Conclude Investigation: When you have sufficient evidence or have disproved candidates, call finish_investigation "
+            "8. Adversarial Self-Review: Critically evaluate whether an attacker can realistically satisfy prerequisites in production. "
+            "If the code is properly guarded, a stub is test-only, or the issue is non-exploitable, record counterevidence or set is_exploitable=false rather than reporting a false positive finding.\n"
+            "9. Conclude Investigation: When you have sufficient evidence or have disproved candidates, call finish_investigation "
             "with exact line citations. Findings with incorrect line citations will be rejected.\n"
             "CRITICAL: Always use relative file paths (e.g. 'api/delegation.py') when requesting source excerpts or submitting findings."
         )
@@ -160,6 +172,11 @@ class LiveAIInvestigator:
             "Explore architecture, discover entry points, inspect implementation code, "
             "trace sensitive data flows, search for counterevidence/mitigations, and report verified findings."
         )
+        if prior_memory and (prior_memory.hypotheses or prior_memory.explored_paths):
+            initial_user_message += (
+                f"\n\n[Persistent Memory Active: {len(prior_memory.hypotheses)} prior hypotheses "
+                f"and {len(prior_memory.explored_paths)} explored sessions loaded. Use query_investigation_memory to review.]"
+            )
         if prompt_hint:
             initial_user_message += f"\n\nContextual Hint:\n{prompt_hint}"
 
@@ -331,13 +348,16 @@ class LiveAIInvestigator:
             for h in executor.hypotheses.values():
                 self.storage.save_hypothesis(h, scan_id=run_id, repo_path=str(self.repository_root))
 
+            existing_paths = list(prior_memory.explored_paths) if prior_memory and prior_memory.explored_paths else []
+            existing_paths.append({"run_id": run_id, "findings_count": len(executor.findings)})
+
             mem_record = InvestigationMemoryRecord(
                 repo_path=str(self.repository_root),
                 source_revision=self.source_revision,
                 architecture_summary={"total_turns": len(trace.turns), "stop_reason": stop_reason},
                 entry_points=[{"route": h.entry_point} for h in executor.hypotheses.values()],
                 security_boundaries=[b.model_dump() for b in self.intelligence.auth_boundaries],
-                explored_paths=[{"run_id": run_id, "findings_count": len(executor.findings)}],
+                explored_paths=existing_paths,
                 hypotheses=[h.model_dump() for h in executor.hypotheses.values()],
                 counterevidence_catalog=[
                     {"hyp_id": h.hypothesis_id, "counter": h.counterevidence}

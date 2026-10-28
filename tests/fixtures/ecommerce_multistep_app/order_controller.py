@@ -39,8 +39,6 @@ def pay_order(order_id: str, token: str) -> dict[str, str]:
 
 @app_route("/api/orders/fulfill", methods=["POST"])
 def fulfill_order(order_id: str) -> dict[str, str]:
-    # Multi-step state machine vulnerability:
-    # Directly dispatches and sets order.status = "FULFILLED" without checking payment!
     order = ORDERS_DB.get(order_id)
     if not order:
         return {"error": "not_found"}

@@ -487,6 +487,38 @@ class SQLiteStorage:
         except sqlite3.Error as error:
             raise StorageError(f"Database error loading repository memory: {error}") from error
 
+    def load_latest_repository_memory(self, repo_path: str) -> InvestigationMemoryRecord | None:
+        """Load the most recent persistent repository memory for a repository path."""
+        try:
+            with self._connection() as conn:
+                cur = conn.execute(
+                    "SELECT * FROM repository_memory WHERE repo_path = ? ORDER BY updated_at DESC LIMIT 1;",
+                    (repo_path,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+
+                row_dict = dict(row)
+                memory_raw = row_dict.get("memory_json")
+                if memory_raw and memory_raw != "{}":
+                    try:
+                        return InvestigationMemoryRecord.model_validate_json(memory_raw)
+                    except Exception:
+                        pass
+
+                return InvestigationMemoryRecord(
+                    repo_path=row["repo_path"],
+                    source_revision=row["source_revision"],
+                    architecture_summary=json.loads(row["architecture_summary_json"]),
+                    entry_points=json.loads(row["entry_points_json"]),
+                    security_boundaries=json.loads(row["security_boundaries_json"]),
+                    analysis_gaps=json.loads(row["analysis_gaps_json"]),
+                    updated_at=row["updated_at"],
+                )
+        except sqlite3.Error as error:
+            raise StorageError(f"Database error loading latest repository memory: {error}") from error
+
     def invalidate_stale_memory(self, repo_path: str, current_revision: str) -> int:
         """Invalidate obsolete graph and memory caches when source code revision changes."""
         if not current_revision:

@@ -16,11 +16,7 @@ def jwt_required(func: Any) -> Any:
 
 @jwt_required
 def request_refund(order_id: str, caller_id: str, amount: float) -> dict[str, Any]:
-    """Accept and enqueue a refund request.
-
-    VULNERABILITY: Does not establish an atomic lock or update order status to RESERVED
-    prior to queue dispatch, allowing concurrent requests to duplicate refunds.
-    """
+    """Accept and enqueue a refund request for processing."""
     order = get_order_by_id(order_id)
     if not order:
         return {"error": "Order not found", "status": 404}
@@ -31,6 +27,5 @@ def request_refund(order_id: str, caller_id: str, amount: float) -> dict[str, An
     if amount > order.get("amount", 0.0):
         return {"error": "Amount exceeds order total", "status": 400}
 
-    # Crosses trust boundary: asynchronous worker execution without atomic reservation
     job_id = dispatch_refund_job(order_id=order_id, amount=amount, recipient=caller_id)
     return {"status": "accepted", "job_id": job_id, "state": "PENDING"}

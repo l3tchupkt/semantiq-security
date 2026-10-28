@@ -84,6 +84,26 @@ GROUND_TRUTH_CASES: dict[str, dict[str, Any]] = {
         "mitigation_module": "database/orders.py",
         "expected_category": "business_logic_race",
     },
+    "case_3_tenant_cache_poisoning": {
+        "case_id": "case_3_tenant_cache_poisoning",
+        "title": "Cross-Tenant Workload Cache Poisoning via Unscoped Spec Hash",
+        "vulnerable_fixture": REPO_ROOT / "tests" / "fixtures" / "cloud_orchestration_app",
+        "safe_fixture": REPO_ROOT / "tests" / "fixtures" / "cloud_orchestration_safe",
+        "primary_flaw_file": "services/compiler.py",
+        "affected_modules": [
+            "api/workloads.py",
+            "services/compiler.py",
+            "services/cache.py",
+            "services/scheduler.py",
+        ],
+        "invariant_violation": (
+            "Multi-tenant workload compiler caches execution bundles using global spec_hash key "
+            "without scoping by tenant_id, allowing malicious tenants to poison execution bundles "
+            "and execute untrusted code in victim tenant workloads."
+        ),
+        "mitigation_module": "services/compiler.py",
+        "expected_category": "broken_tenant_isolation",
+    },
 }
 
 NEUTRAL_INVESTIGATION_PROMPT = (
@@ -467,6 +487,162 @@ def create_simulated_case2_safe_tool_script() -> list[ProviderToolResponse]:
     ]
 
 
+def create_simulated_case3_tool_script() -> list[ProviderToolResponse]:
+    """Provides a scripted multi-turn tool sequence for Case 3 (Tenant Cache Poisoning)."""
+    return [
+        ProviderToolResponse(
+            content="Starting architectural discovery for cloud orchestration platform.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_call_01",
+                    tool_name="get_repository_overview",
+                    arguments={},
+                )
+            ],
+            tokens_used=120,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Inspecting workload router in api/workloads.py.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_call_02",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "api/workloads.py", "start_line": 25, "end_line": 65},
+                )
+            ],
+            tokens_used=180,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Inspecting workload bundle compilation in services/compiler.py.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_call_03",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "services/compiler.py", "start_line": 15, "end_line": 42},
+                )
+            ],
+            tokens_used=190,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Tracing cross-component interactions and shared state.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_call_04",
+                    tool_name="query_component_interactions",
+                    arguments={"component": "compiler"},
+                )
+            ],
+            tokens_used=160,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Recording hypothesis on cross-tenant cache poisoning.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_call_05",
+                    tool_name="record_hypothesis",
+                    arguments={
+                        "hypothesis_id": "hyp_cache_poison_01",
+                        "target_symbol": "compile_workload_bundle",
+                        "entry_point": "/api/v1/workloads/submit",
+                        "sensitive_operation": "cross_tenant_bundle_reuse",
+                        "statement": "Workload bundle cache key bundle:{spec_hash} is unscoped by tenant_id, allowing cross-tenant bundle hijacking.",
+                    },
+                )
+            ],
+            tokens_used=170,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Submitting verified finding for cross-tenant workload cache poisoning.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_call_06",
+                    tool_name="finish_investigation",
+                    arguments={
+                        "summary": "Verified cross-tenant cache poisoning in WorkloadCompiler via unscoped cache key.",
+                        "findings": [
+                            {
+                                "title": "Cross-Tenant Workload Cache Poisoning via Unscoped Spec Hash",
+                                "rule_id": "AI-DISCOVERY-TENANT-001",
+                                "file_path": "services/compiler.py",
+                                "start_line": 25,
+                                "end_line": 40,
+                                "summary": (
+                                    "The compilation service caches execution bundles under global key 'bundle:{spec_hash}' "
+                                    "without including tenant_id. A malicious tenant can pre-seed a spec_hash with malicious "
+                                    "instructions that are subsequently executed when another tenant compiles that specification."
+                                ),
+                                "category": "broken_tenant_isolation",
+                                "severity": "critical",
+                                "confidence": "high",
+                                "entry_point": "api/workloads.py",
+                                "is_exploitable": True,
+                                "attack_chain_steps": [
+                                    "1. Tenant Alpha submits workload with spec_hash 'spec_123' and malicious entrypoint",
+                                    "2. WorkloadCompiler saves bundle to global cache key 'bundle:spec_123'",
+                                    "3. Tenant Beta submits legitimate workload with identical spec_hash 'spec_123'",
+                                    "4. Compiler reuses Tenant Alpha's cached bundle, executing Tenant Alpha code in Tenant Beta context",
+                                ],
+                            }
+                        ],
+                    },
+                )
+            ],
+            tokens_used=310,
+            finish_reason="tool_calls",
+        ),
+    ]
+
+
+def create_simulated_case3_safe_tool_script() -> list[ProviderToolResponse]:
+    """Provides a scripted multi-turn tool sequence for Case 3 Safe counterpart."""
+    return [
+        ProviderToolResponse(
+            content="Inspecting repository overview.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_s_01",
+                    tool_name="get_repository_overview",
+                    arguments={},
+                )
+            ],
+            tokens_used=110,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Inspecting compiler in services/compiler.py for tenant isolation.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_s_02",
+                    tool_name="get_source_excerpt",
+                    arguments={"file_path": "services/compiler.py", "start_line": 20, "end_line": 40},
+                )
+            ],
+            tokens_used=170,
+            finish_reason="tool_calls",
+        ),
+        ProviderToolResponse(
+            content="Mitigating control verified: cache key includes tenant_id scoping. Concluding safe run.",
+            tool_calls=[
+                InvestigationToolCall(
+                    call_id="c3_s_03",
+                    tool_name="finish_investigation",
+                    arguments={
+                        "summary": "Safe counterpart inspected: cache key is scoped as bundle:{tenant_id}:{spec_hash}, preventing cross-tenant reuse.",
+                        "findings": [],
+                    },
+                )
+            ],
+            tokens_used=140,
+            finish_reason="tool_calls",
+        ),
+    ]
+
+
 async def evaluate_single_case(
     case_spec: dict[str, Any],
     provider_name: str,
@@ -540,11 +716,12 @@ async def evaluate_single_case(
         )
     else:
         is_scripted_mock = True
-        script = (
-            create_simulated_case1_tool_script()
-            if case_id == "case_1_delegation_scope"
-            else create_simulated_case2_tool_script()
-        )
+        if case_id == "case_1_delegation_scope":
+            script = create_simulated_case1_tool_script()
+        elif case_id == "case_2_reconciliation_race":
+            script = create_simulated_case2_tool_script()
+        else:
+            script = create_simulated_case3_tool_script()
         ai_provider = MockAIProvider(
             config=AIConfig(enabled=True, provider="mock", model="scripted-workflow-agent"),
             tool_script=script,
@@ -586,11 +763,12 @@ async def evaluate_single_case(
     # 4. Safe Counterpart Run (False Positive Verification)
     print("\n[Step 3] Running False Positive Evaluation on Safe Counterpart...")
     if is_scripted_mock:
-        safe_script = (
-            create_simulated_case1_safe_tool_script()
-            if case_id == "case_1_delegation_scope"
-            else create_simulated_case2_safe_tool_script()
-        )
+        if case_id == "case_1_delegation_scope":
+            safe_script = create_simulated_case1_safe_tool_script()
+        elif case_id == "case_2_reconciliation_race":
+            safe_script = create_simulated_case2_safe_tool_script()
+        else:
+            safe_script = create_simulated_case3_safe_tool_script()
         safe_provider: BaseAIProvider = MockAIProvider(
             config=AIConfig(enabled=True, provider="mock", model="scripted-workflow-agent"),
             tool_script=safe_script,
@@ -612,7 +790,6 @@ async def evaluate_single_case(
         source_revision=safe_inspection.git_revision or "",
     )
 
-
     safe_trace = await safe_investigator.investigate(prompt_hint=None)
     safe_fp_count = len(safe_trace.final_findings)
     print(f"  Safe counterpart findings: {safe_fp_count} (Expected: 0 false positives)")
@@ -625,10 +802,10 @@ async def evaluate_single_case(
     invariant_described = False
 
     for f in ai_trace.final_findings:
-        if case_spec["primary_flaw_file"] in f.file_path:
+        if case_spec["primary_flaw_file"] in f.file_path or any(mod in f.file_path for mod in case_spec.get("affected_modules", [])):
             verified_location = True
-            summary_lower = f.summary.lower()
-            if any(term in summary_lower for term in ["scope", "authority", "privilege", "atomic", "race", "lock", "concurren"]):
+            text_to_check = (f.summary + " " + f.title + " " + " ".join(f.supporting_evidence)).lower()
+            if any(term in text_to_check for term in ["scope", "authority", "privilege", "atomic", "race", "lock", "concurren", "cache", "tenant", "poison", "isolation"]):
                 invariant_described = True
                 flaw_discovered = True
                 break

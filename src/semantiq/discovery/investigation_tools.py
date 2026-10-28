@@ -23,6 +23,7 @@ from semantiq.models import (
     DataFlowStep,
     Finding,
     InvestigationHypothesis,
+    InvestigationMemoryRecord,
     SeverityLevel,
     SourceLocation,
     ValidationStatus,
@@ -243,6 +244,64 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="query_investigation_memory",
+        description=(
+            "Recall persistent investigation memory across sessions: prior evaluated hypotheses, "
+            "explored paths, proved invariants, and architectural findings for this repository."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "filter_type": {
+                    "type": "string",
+                    "enum": ["all", "hypotheses", "explored_paths", "counterevidence"],
+                    "description": "Filter memory category (default: 'all')",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="query_component_interactions",
+        description=(
+            "Analyze cross-component architectural interactions and asynchronous flows: "
+            "HTTP handlers, message queues, dispatchers, background workers, shared state, "
+            "and external integrations."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "component": {
+                    "type": "string",
+                    "description": "Component, module, or function name to trace (e.g. 'refund_queue', 'coordinator', 'all')",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="query_state_transitions",
+        description=(
+            "Analyze state transitions, status checks, and concurrency controls for domain entities "
+            "(orders, tasks, refunds, tokens, quotas). Discovers whether state mutations occur with or without "
+            "precondition checks, atomic locks, or reservation steps."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "entity": {
+                    "type": "string",
+                    "description": "Entity or domain concept to inspect (e.g. 'order', 'task', 'refund', 'user')",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Optional file path to limit analysis",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
         name="finish_investigation",
         description=(
             "Conclude the investigation and submit discovered vulnerability findings. "
@@ -278,6 +337,14 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
                                 "items": {"type": "string"},
                                 "description": "Ordered steps required to exploit vulnerability",
                             },
+                            "adversarial_review": {
+                                "type": "string",
+                                "description": "Adversarial critique: why an attacker can overcome potential mitigations and whether prerequisite conditions are realistically achievable in production",
+                            },
+                            "is_exploitable": {
+                                "type": "boolean",
+                                "description": "True if genuinely exploitable in production; False if mitigated, theoretical design concern, or test-only stub",
+                            },
                         },
                         "required": ["title", "file_path", "start_line", "end_line", "summary", "category", "severity"],
                     },
@@ -301,13 +368,20 @@ class InvestigationToolExecutor:
         graph: SemanticProgramGraph,
         storage: SQLiteStorage | None = None,
         source_revision: str = "",
+        prior_memory: InvestigationMemoryRecord | None = None,
     ) -> None:
         self.repository_root = Path(repository_root).expanduser().resolve()
         self.intelligence = intelligence
         self.graph = graph
         self.storage = storage
         self.source_revision = source_revision
+        self.prior_memory = prior_memory
         self.hypotheses: dict[str, InvestigationHypothesis] = {}
+        if prior_memory and prior_memory.hypotheses:
+            for h_dict in prior_memory.hypotheses:
+                with contextlib.suppress(Exception):
+                    h_obj = InvestigationHypothesis.model_validate(h_dict)
+                    self.hypotheses[h_obj.hypothesis_id] = h_obj
         self.findings: list[Finding] = []
         self.invalid_citations: list[dict[str, Any]] = []
         self.is_finished: bool = False
@@ -816,8 +890,8 @@ class InvestigationToolExecutor:
             analysis_notes = []
             if is_authenticated and not has_authorization:
                 analysis_notes.append(
-                    "CRITICAL AUTH DIVERGENCE: Authentication is verified (caller identity established), "
-                    "but AUTHORIZATION is unverified (caller authority over requested action/delegated scope is not enforced)."
+                    "Authentication check present (caller identity established); "
+                    "no authorization, role-check, or authority-scoping check identified in local scope."
                 )
             elif not is_authenticated:
                 analysis_notes.append("Endpoint/function is unauthenticated (publicly callable).")
@@ -945,6 +1019,127 @@ class InvestigationToolExecutor:
             "message": f"Hypothesis '{hyp_id}' updated to '{disposition}'.",
         }
 
+    def _tool_query_investigation_memory(self, args: dict[str, Any]) -> dict[str, Any]:
+        filter_type = args.get("filter_type", "all")
+        hypotheses_data = [h.model_dump() for h in self.hypotheses.values()]
+        explored_paths = []
+        boundaries = []
+        architecture_facts: dict[str, Any] = {}
+
+        if self.prior_memory:
+            architecture_facts = self.prior_memory.architecture_summary or {}
+            explored_paths = self.prior_memory.explored_paths or []
+            boundaries = self.prior_memory.security_boundaries or []
+
+        if filter_type == "hypotheses":
+            return {"status": "success", "hypotheses": hypotheses_data}
+        if filter_type == "explored_paths":
+            return {"status": "success", "explored_paths": explored_paths}
+        if filter_type == "counterevidence":
+            counter_catalog = [
+                {"hypothesis_id": h.hypothesis_id, "disposition": h.disposition, "counterevidence": h.counterevidence}
+                for h in self.hypotheses.values()
+                if h.counterevidence
+            ]
+            return {"status": "success", "counterevidence_catalog": counter_catalog}
+
+        return {
+            "status": "success",
+            "active_hypotheses_count": len(self.hypotheses),
+            "hypotheses": hypotheses_data,
+            "explored_paths": explored_paths,
+            "recorded_boundaries": boundaries,
+            "architecture_facts": architecture_facts,
+        }
+
+    def _tool_query_component_interactions(self, args: dict[str, Any]) -> dict[str, Any]:
+        component_filter = args.get("component", "all").strip().lower()
+        interactions: list[dict[str, Any]] = []
+
+        for rel_path in self.intelligence.file_metadata:
+            full_p = resolve_safe_path(self.repository_root, rel_path)
+            if not full_p.is_file():
+                continue
+            with contextlib.suppress(Exception):
+                code = full_p.read_text(encoding="utf-8", errors="replace")
+                lines = code.splitlines()
+                for i, line in enumerate(lines, 1):
+                    lower_line = line.lower()
+                    if any(q in lower_line for q in ("dispatch_", "queue.put", "enqueue", "celery", "send_task", "publish")):
+                        interactions.append({
+                            "source_file": rel_path,
+                            "line": i,
+                            "interaction_type": "asynchronous_dispatch",
+                            "code_snippet": line.strip(),
+                            "description": "Component dispatches asynchronous work payload to queue/worker without synchronous completion",
+                        })
+                    elif any(w in lower_line for w in ("def process_", "worker", "on_message", "consume", "handle_job", "taskcoordinator")):
+                        interactions.append({
+                            "source_file": rel_path,
+                            "line": i,
+                            "interaction_type": "worker_consumer",
+                            "code_snippet": line.strip(),
+                            "description": "Background worker consumes and executes asynchronous tasks or coordinates delegated execution",
+                        })
+                    elif any(c in lower_line for c in ("cache.get", "cache.set", "redis", "orders_db", "database.", "db.")):
+                        interactions.append({
+                            "source_file": rel_path,
+                            "line": i,
+                            "interaction_type": "shared_state_access",
+                            "code_snippet": line.strip(),
+                            "description": "Component accesses shared persistent or in-memory state repository",
+                        })
+
+        if component_filter != "all":
+            interactions = [it for it in interactions if component_filter in it["source_file"].lower() or component_filter in it["code_snippet"].lower()]
+
+        return {
+            "status": "success",
+            "total_interactions_found": len(interactions),
+            "interactions": interactions[:25],
+        }
+
+    def _tool_query_state_transitions(self, args: dict[str, Any]) -> dict[str, Any]:
+        entity = args.get("entity", "").strip().lower()
+        file_filter = args.get("file_path", "").strip().lower()
+        transitions: list[dict[str, Any]] = []
+
+        for rel_path in self.intelligence.file_metadata:
+            if file_filter and file_filter not in rel_path.lower():
+                continue
+            full_p = resolve_safe_path(self.repository_root, rel_path)
+            if not full_p.is_file():
+                continue
+            with contextlib.suppress(Exception):
+                code = full_p.read_text(encoding="utf-8", errors="replace")
+                lines = code.splitlines()
+                for i, line in enumerate(lines, 1):
+                    lower_line = line.lower()
+                    if entity and entity not in lower_line:
+                        continue
+                    if any(m in lower_line for m in (".status =", ".state =", "status=", "state=", "update(status=")):
+                        transitions.append({
+                            "file_path": rel_path,
+                            "line": i,
+                            "transition_type": "state_mutation",
+                            "statement": line.strip(),
+                            "has_atomic_lock": any(lock in code.lower() for lock in ("lock", "atomic", "transaction")),
+                        })
+                    elif any(g in lower_line for g in (".status ==", ".state ==", "is_paid", "is_valid", "can_transition")):
+                        transitions.append({
+                            "file_path": rel_path,
+                            "line": i,
+                            "transition_type": "state_guard",
+                            "statement": line.strip(),
+                        })
+
+        return {
+            "status": "success",
+            "entity": entity or "any",
+            "total_transitions_found": len(transitions),
+            "transitions": transitions[:30],
+        }
+
     def _tool_finish_investigation(self, args: dict[str, Any]) -> dict[str, Any]:
         summary = args.get("summary", "")
         raw_findings = args.get("findings", [])
@@ -970,6 +1165,17 @@ class InvestigationToolExecutor:
                 except Exception:
                     continue
             if not isinstance(rf, dict):
+                continue
+
+            # Adversarial self-review check: if model determined this is not exploitable or safe, skip from active findings
+            is_exploitable = rf.get("is_exploitable")
+            if is_exploitable is False or str(is_exploitable).lower() == "false":
+                logger.info("Finding '%s' marked not exploitable by adversarial self-review; excluding.", rf.get("title"))
+                continue
+
+            counter_list = rf.get("counterevidence", [])
+            if counter_list and any("safe" in str(c).lower() or "mitigated" in str(c).lower() or "enforced" in str(c).lower() for c in counter_list) and not is_exploitable:
+                logger.info("Finding '%s' has mitigating counterevidence and lacks exploitability confirmation; excluding.", rf.get("title"))
                 continue
 
             raw_fpath = rf.get("file_path", "").strip().replace("\\", "/")
@@ -1079,6 +1285,8 @@ class InvestigationToolExecutor:
                 discovery_backend="ai_live_investigator",
             )
             f.fingerprint = f.calculate_fingerprint()
+            if rf.get("adversarial_review"):
+                f.metadata["adversarial_review"] = rf.get("adversarial_review")
 
             # Verify local citations
             valid, reason = verify_finding_citations(self.repository_root, f)
