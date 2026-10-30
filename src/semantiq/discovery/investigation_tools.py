@@ -302,6 +302,74 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="query_async_flows",
+        description=(
+            "Inspect evidence-backed asynchronous message flows, queues, task publication, and background workers. "
+            "Reports exact queue identifiers, matched consumer handlers, payload schemas, and resolution confidence."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "component": {
+                    "type": "string",
+                    "description": "Optional component, module, or symbol name filter (e.g. 'refunds', 'scheduler', 'worker')",
+                },
+                "queue_name": {
+                    "type": "string",
+                    "description": "Optional queue or topic name filter (e.g. 'PENDING_QUEUE', 'EXECUTION_QUEUE')",
+                },
+                "unverified_only": {
+                    "type": "boolean",
+                    "description": "Filter for flows with unverified assumptions or dynamic dispatch (default: false)",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="query_worker_authorization",
+        description=(
+            "Analyze consumer-side authorization, caller identity trust, and tenant isolation in background workers. "
+            "Discovers whether workers blindly trust message-supplied user/tenant IDs without independent authorization, "
+            "and identifies which sensitive sinks are reached."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "worker_symbol": {
+                    "type": "string",
+                    "description": "Optional worker function or handler symbol name to inspect",
+                },
+                "queue_name": {
+                    "type": "string",
+                    "description": "Optional queue name to filter",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="query_idempotency_and_concurrency",
+        description=(
+            "Analyze concurrency controls, idempotency guards, duplicate delivery protections, and atomic transaction boundaries "
+            "across message queues. Identifies financial double-claim and retry risks."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "entity": {
+                    "type": "string",
+                    "description": "Optional entity or domain concept (e.g. 'refund', 'order', 'payment', 'task')",
+                },
+                "queue_name": {
+                    "type": "string",
+                    "description": "Optional queue name to inspect",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
         name="finish_investigation",
         description=(
             "Conclude the investigation and submit discovered vulnerability findings. "
@@ -1097,10 +1165,25 @@ class InvestigationToolExecutor:
         if component_filter != "all":
             interactions = [it for it in interactions if component_filter in it["source_file"].lower() or component_filter in it["code_snippet"].lower()]
 
+        # Include structured asynchronous boundary flows
+        async_flows_summary = []
+        for f in self.intelligence.get_async_flows(component=None if component_filter == "all" else component_filter):
+            async_flows_summary.append({
+                "flow_id": f.flow_id,
+                "framework": f.framework.value,
+                "queue_name": f.queue_name,
+                "producer": f"{f.producer_file}:{f.producer_symbol}",
+                "consumer": f"{f.consumer_file}:{f.consumer_symbol}" if f.consumer_file else "UNRESOLVED",
+                "resolution": f.resolution_method.value,
+                "confidence": f.confidence,
+                "invariant_violations": f.security_boundary.invariant_violations,
+            })
+
         return {
             "status": "success",
             "total_interactions_found": len(interactions),
             "interactions": interactions[:25],
+            "modeled_async_flows": async_flows_summary[:15],
         }
 
     def _tool_query_state_transitions(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -1142,6 +1225,119 @@ class InvestigationToolExecutor:
             "entity": entity or "any",
             "total_transitions_found": len(transitions),
             "transitions": transitions[:30],
+        }
+
+    def _tool_query_async_flows(self, args: dict[str, Any]) -> dict[str, Any]:
+        component = args.get("component", "").strip() or None
+        queue_name = args.get("queue_name", "").strip() or None
+        unverified_only = bool(args.get("unverified_only", False))
+
+        flows = self.intelligence.get_async_flows(
+            component=component, queue=queue_name, unverified_only=unverified_only
+        )
+        results: list[dict[str, Any]] = []
+        for f in flows[:20]:
+            results.append({
+                "flow_id": f.flow_id,
+                "framework": f.framework.value,
+                "queue_name": f.queue_name,
+                "producer": f"{f.producer_file}:{f.producer_symbol}:{f.producer_line}",
+                "consumer": (
+                    f"{f.consumer_file}:{f.consumer_symbol}:{f.consumer_line}"
+                    if f.consumer_file
+                    else "UNRESOLVED"
+                ),
+                "resolution_method": f.resolution_method.value,
+                "confidence": f.confidence,
+                "payload_schema": f.payload_schema,
+                "security_boundary": f.security_boundary.to_dict(),
+                "evidence": f.evidence,
+                "unresolved_assumptions": f.unresolved_assumptions,
+                "reason_unresolved": f.reason_unresolved,
+            })
+
+        return {
+            "status": "success",
+            "total_flows_found": len(flows),
+            "flows": results,
+            "bounded_note": "Showing up to 20 flows; use component or queue_name filters to narrow results",
+        }
+
+    def _tool_query_worker_authorization(self, args: dict[str, Any]) -> dict[str, Any]:
+        worker_symbol = args.get("worker_symbol", "").strip().lower()
+        queue_name = args.get("queue_name", "").strip().lower()
+
+        flows = self.intelligence.get_async_flows(queue=queue_name or None)
+        matching_flows = []
+        for f in flows:
+            if worker_symbol:
+                if (f.consumer_symbol and worker_symbol in f.consumer_symbol.lower()) or (
+                    f.consumer_file and worker_symbol in f.consumer_file.lower()
+                ):
+                    matching_flows.append(f)
+            else:
+                matching_flows.append(f)
+
+        findings: list[dict[str, Any]] = []
+        for f in matching_flows:
+            findings.append({
+                "flow_id": f.flow_id,
+                "worker": f"{f.consumer_file}:{f.consumer_symbol}" if f.consumer_file else "Unknown",
+                "queue_name": f.queue_name,
+                "consumer_reauthorizes": f.security_boundary.consumer_reauthorizes,
+                "consumer_auth_details": f.security_boundary.consumer_auth_details,
+                "tenant_isolated": f.security_boundary.tenant_isolated,
+                "tenant_propagation_method": f.security_boundary.tenant_propagation_method,
+                "invariant_violations": f.security_boundary.invariant_violations,
+                "sensitive_payload_fields": [
+                    p.to_dict() for p in f.payload_propagations if p.reaches_sensitive_sink
+                ],
+                "all_payload_fields": [p.to_dict() for p in f.payload_propagations],
+            })
+
+        return {
+            "status": "success",
+            "total_workers_analyzed": len(findings),
+            "worker_authorizations": findings[:15],
+        }
+
+    def _tool_query_idempotency_and_concurrency(self, args: dict[str, Any]) -> dict[str, Any]:
+        entity = args.get("entity", "").strip().lower()
+        queue_name = args.get("queue_name", "").strip().lower()
+
+        flows = self.intelligence.get_async_flows(queue=queue_name or None)
+        if entity:
+            flows = [
+                f
+                for f in flows
+                if entity in f.queue_name.lower()
+                or entity in f.producer_symbol.lower()
+                or (f.consumer_symbol and entity in f.consumer_symbol.lower())
+                or any(entity in p.lower() for p in f.payload_schema)
+            ]
+
+        results: list[dict[str, Any]] = []
+        for f in flows:
+            results.append({
+                "flow_id": f.flow_id,
+                "queue_name": f.queue_name,
+                "producer": f"{f.producer_file}:{f.producer_symbol}",
+                "consumer": (
+                    f"{f.consumer_file}:{f.consumer_symbol}"
+                    if f.consumer_file
+                    else "Unresolved"
+                ),
+                "has_idempotency_guard": f.security_boundary.has_idempotency_guard,
+                "idempotency_mechanism": f.security_boundary.idempotency_mechanism,
+                "has_retry_risk": f.security_boundary.has_retry_risk,
+                "invariant_violations": f.security_boundary.invariant_violations,
+                "evidence": f.evidence,
+            })
+
+        return {
+            "status": "success",
+            "total_flows_evaluated": len(results),
+            "concurrency_and_idempotency": results[:15],
         }
 
     def _tool_finish_investigation(self, args: dict[str, Any]) -> dict[str, Any]:

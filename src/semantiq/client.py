@@ -513,6 +513,24 @@ class Semantiq:
         graph = await self.get_semantic_graph(target)
         return graph.find_resource_access_paths(with_ownership_check=with_ownership_check)
 
+    async def query_async_flows(
+        self,
+        target: str | Path,
+        component: str | None = None,
+        queue: str | None = None,
+        unverified_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Query evidence-backed asynchronous message boundaries and background worker flows."""
+        target_path = Path(target).expanduser().resolve()
+        inspector = RepositoryInspector(self.config.scan)
+        inspection = inspector.inspect(target_path)
+        from semantiq.repository.intelligence import RepositoryIntelligence
+
+        intelligence = RepositoryIntelligence(target_path)
+        intelligence.index_repository(inspection.in_scope_files)
+        flows = intelligence.get_async_flows(component=component, queue=queue, unverified_only=unverified_only)
+        return [f.to_dict() for f in flows]
+
     async def get_analysis_gaps(self, target: str | Path) -> dict[str, Any]:
         """Report unresolved dynamic calls, unparsed files, and unsupported syntax."""
         repo_path = Path(target).expanduser().resolve()

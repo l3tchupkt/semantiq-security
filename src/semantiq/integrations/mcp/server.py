@@ -226,6 +226,20 @@ TOOLS_MANIFEST = [
         }
     },
     {
+        "name": "semantiq_query_async_flows",
+        "description": "Inspect evidence-backed asynchronous message boundaries, queues, and background worker flows.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "component": {"type": "string", "description": "Optional component or symbol name filter"},
+                "queue": {"type": "string", "description": "Optional queue name filter"},
+                "unverified_only": {"type": "boolean", "description": "Filter for unverified/dynamic flows"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
         "name": "semantiq_get_analysis_gaps",
         "description": "Retrieve unresolved dynamic dispatch sites, unparsed files, and unsupported syntax notes.",
         "inputSchema": {
@@ -458,6 +472,14 @@ class MCPServer:
             return await self.security.query_tenant_isolation(
                 target=args["path"],
                 with_ownership_check=args.get("with_ownership_check"),
+            )
+
+        elif name == "semantiq_query_async_flows":
+            return await self.security.query_async_flows(
+                target=args["path"],
+                component=args.get("component"),
+                queue=args.get("queue"),
+                unverified_only=args.get("unverified_only", False),
             )
 
         elif name == "semantiq_get_analysis_gaps":

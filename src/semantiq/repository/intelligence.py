@@ -9,6 +9,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from semantiq.analysis.async_flow import (
+    AsyncConsumerFact,
+    AsyncFlowAnalyzer,
+    AsyncFlowEdge,
+    AsyncProducerFact,
+)
 from semantiq.analysis.frameworks import GLOBAL_FRAMEWORK_REGISTRY
 from semantiq.models import (
     AuthBoundary,
@@ -100,6 +106,8 @@ class CachedFileEntry:
     call_edges: list[CallEdge] = field(default_factory=list)
     security_sinks: list[SecuritySinkLocation] = field(default_factory=list)
     unresolved_calls: list[UnresolvedCall] = field(default_factory=list)
+    async_producers: list[AsyncProducerFact] = field(default_factory=list)
+    async_consumers: list[AsyncConsumerFact] = field(default_factory=list)
 
 
 class RepositoryIntelligence:
@@ -120,6 +128,7 @@ class RepositoryIntelligence:
         self.global_middleware: list[str] = []
         self.parsed_files_count: int = 0
         self.failed_parsing_files: list[str] = []
+        self.async_flows: list[AsyncFlowEdge] = []
 
         # Granular incremental indexing cache
         self._file_cache: dict[str, CachedFileEntry] = {}
@@ -245,7 +254,42 @@ class RepositoryIntelligence:
             u for f in active_files if f in self._file_cache for u in self._file_cache[f].unresolved_calls
         ]
 
+        # Reassemble and correlate evidence-backed async flows across all active files
+        async_analyzer = AsyncFlowAnalyzer(self.repo_root)
+        for f in active_files:
+            if f in self._file_cache:
+                async_analyzer.producers.extend(self._file_cache[f].async_producers)
+                async_analyzer.consumers.extend(self._file_cache[f].async_consumers)
+        async_analyzer._correlate_flows()
+        self.async_flows = list(async_analyzer.flows)
+
         self.parsed_files_count = len([f for f in active_files if f in self.symbols])
+
+    def get_async_flows(
+        self,
+        component: str | None = None,
+        queue: str | None = None,
+        unverified_only: bool = False,
+    ) -> list[AsyncFlowEdge]:
+        """Query modeled asynchronous flows with optional component or queue filtering."""
+        flows = self.async_flows
+        if component:
+            comp_lower = component.lower()
+            flows = [
+                f
+                for f in flows
+                if comp_lower in f.producer_file.lower()
+                or comp_lower in f.producer_symbol.lower()
+                or (f.consumer_file and comp_lower in f.consumer_file.lower())
+                or (f.consumer_symbol and comp_lower in f.consumer_symbol.lower())
+                or comp_lower in f.queue_name.lower()
+            ]
+        if queue:
+            q_lower = queue.lower()
+            flows = [f for f in flows if q_lower in f.queue_name.lower()]
+        if unverified_only:
+            flows = [f for f in flows if f.confidence < 0.80]
+        return flows
 
     def _index_python_file(
         self,
@@ -355,6 +399,12 @@ class RepositoryIntelligence:
             out_unresolved=file_unresolved_calls,
         )
 
+        # Extract asynchronous producers and consumers for this file
+        async_analyzer = AsyncFlowAnalyzer(self.repo_root)
+        async_analyzer._extract_file_async_facts(tree, rel_path, source_code)
+        file_async_producers = list(async_analyzer.producers)
+        file_async_consumers = list(async_analyzer.consumers)
+
         entry = CachedFileEntry(
             sha256=sha,
             mtime_ns=mtime_ns,
@@ -366,6 +416,8 @@ class RepositoryIntelligence:
             call_edges=file_call_edges,
             security_sinks=file_security_sinks,
             unresolved_calls=file_unresolved_calls,
+            async_producers=file_async_producers,
+            async_consumers=file_async_consumers,
         )
         self._file_cache[rel_path] = entry
         if sha:

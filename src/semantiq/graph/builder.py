@@ -116,6 +116,9 @@ class GraphBuilder:
         # Phase 2: Inter-procedural Symbol and Call Resolution
         self._resolve_cross_module_calls(graph)
 
+        # Phase 3: Evidence-Backed Asynchronous Boundary Resolution
+        self._resolve_async_flows(graph, in_scope_files)
+
         return GraphBuildResult(
             graph=graph,
             files_indexed=files_indexed,
@@ -279,3 +282,143 @@ class GraphBuilder:
 
         for edge in edges_to_add:
             graph.add_edge(edge)
+
+    def _resolve_async_flows(self, graph: SemanticProgramGraph, in_scope_files: list[str]) -> None:
+        """Construct typed asynchronous queue nodes and dispatch edges across boundaries."""
+        from semantiq.analysis.async_flow import AsyncFlowAnalyzer, AsyncResolutionMethod
+
+        analyzer = AsyncFlowAnalyzer(self.repo_root)
+        flows = analyzer.analyze_repository(in_scope_files)
+
+        for flow in flows:
+            # 1. Ensure queue node exists if named
+            queue_node_id = f"queue:{flow.queue_name}" if flow.queue_name else f"queue:anon_{flow.flow_id}"
+            if queue_node_id not in graph.nodes:
+                graph.add_node(
+                    GraphNode(
+                        id=queue_node_id,
+                        kind=NodeKind.ASYNC_QUEUE,
+                        label=flow.queue_name or "AnonymousQueue",
+                        file_path=flow.producer_file,
+                        start_line=flow.producer_line,
+                        end_line=flow.producer_line,
+                        provenance=RelationshipProvenance.DIRECT_FACT,
+                        source_revision=self.source_revision,
+                        properties={"framework": flow.framework.value, "payload_schema": flow.payload_schema},
+                    )
+                )
+
+            # 2. Add or find Producer Node
+            prod_node_id = f"producer:{flow.producer_file}:{flow.producer_symbol}:{flow.producer_line}"
+            if prod_node_id not in graph.nodes:
+                graph.add_node(
+                    GraphNode(
+                        id=prod_node_id,
+                        kind=NodeKind.MESSAGE_PRODUCER,
+                        label=f"publish:{flow.producer_symbol}",
+                        file_path=flow.producer_file,
+                        start_line=flow.producer_line,
+                        end_line=flow.producer_line,
+                        provenance=RelationshipProvenance.DIRECT_FACT,
+                        source_revision=self.source_revision,
+                        properties={"symbol": flow.producer_symbol, "framework": flow.framework.value},
+                    )
+                )
+
+            # Add PUBLISHES_TO edge: Producer -> Queue
+            graph.add_edge(
+                GraphEdge(
+                    source_id=prod_node_id,
+                    target_id=queue_node_id,
+                    kind=EdgeKind.PUBLISHES_TO,
+                    provenance=RelationshipProvenance.DIRECT_FACT,
+                    confidence=1.0,
+                    properties={"payload_schema": flow.payload_schema},
+                )
+            )
+
+            # 3. Add or find Consumer Node if resolved
+            if flow.consumer_file and flow.consumer_symbol and flow.consumer_line is not None:
+                cons_node_id = f"consumer:{flow.consumer_file}:{flow.consumer_symbol}:{flow.consumer_line}"
+                if cons_node_id not in graph.nodes:
+                    graph.add_node(
+                        GraphNode(
+                            id=cons_node_id,
+                            kind=NodeKind.EVENT_CONSUMER,
+                            label=f"consume:{flow.consumer_symbol}",
+                            file_path=flow.consumer_file,
+                            start_line=flow.consumer_line,
+                            end_line=flow.consumer_line,
+                            provenance=RelationshipProvenance.DIRECT_FACT,
+                            source_revision=self.source_revision,
+                            properties={"symbol": flow.consumer_symbol, "framework": flow.framework.value},
+                        )
+                    )
+
+                # Add CONSUMES_FROM edge: Queue -> Consumer
+                graph.add_edge(
+                    GraphEdge(
+                        source_id=queue_node_id,
+                        target_id=cons_node_id,
+                        kind=EdgeKind.CONSUMES_FROM,
+                        provenance=RelationshipProvenance.DIRECT_FACT,
+                        confidence=1.0,
+                    )
+                )
+
+                # Map resolution method to RelationshipProvenance
+                prov_map = {
+                    AsyncResolutionMethod.CONFIRMED_DIRECT: RelationshipProvenance.STATICALLY_INFERRED,
+                    AsyncResolutionMethod.FRAMEWORK_RESOLVED: RelationshipProvenance.FRAMEWORK_RESOLVED,
+                    AsyncResolutionMethod.PROBABLE_UNVERIFIED: RelationshipProvenance.PROBABLE_UNVERIFIED,
+                    AsyncResolutionMethod.UNRESOLVED_DYNAMIC: RelationshipProvenance.UNRESOLVED,
+                }
+                provenance = prov_map.get(flow.resolution_method, RelationshipProvenance.PROBABLE_UNVERIFIED)
+
+                # Add DISPATCHES_ASYNC edge: Producer -> Consumer directly across the boundary
+                graph.add_edge(
+                    GraphEdge(
+                        source_id=prod_node_id,
+                        target_id=cons_node_id,
+                        kind=EdgeKind.DISPATCHES_ASYNC,
+                        provenance=provenance,
+                        confidence=flow.confidence,
+                        properties={
+                            "flow_id": flow.flow_id,
+                            "queue_name": flow.queue_name,
+                            "evidence": flow.evidence,
+                            "assumptions": flow.unresolved_assumptions,
+                            "security_boundary": flow.security_boundary.to_dict(),
+                        },
+                    )
+                )
+
+                # Add PROPAGATES_PAYLOAD edges for fields reaching sensitive operations
+                for prop in flow.payload_propagations:
+                    if prop.reaches_sensitive_sink:
+                        graph.add_edge(
+                            GraphEdge(
+                                source_id=prod_node_id,
+                                target_id=cons_node_id,
+                                kind=EdgeKind.PROPAGATES_PAYLOAD,
+                                provenance=provenance,
+                                confidence=flow.confidence,
+                                properties=prop.to_dict(),
+                            )
+                        )
+            elif flow.resolution_method == AsyncResolutionMethod.UNRESOLVED_DYNAMIC:
+                # Add explicit UNRESOLVED edge
+                graph.add_edge(
+                    GraphEdge(
+                        source_id=prod_node_id,
+                        target_id=queue_node_id,
+                        kind=EdgeKind.DISPATCHES_ASYNC,
+                        provenance=RelationshipProvenance.UNRESOLVED,
+                        confidence=flow.confidence,
+                        properties={
+                            "flow_id": flow.flow_id,
+                            "reason_unresolved": flow.reason_unresolved,
+                            "assumptions": flow.unresolved_assumptions,
+                        },
+                    )
+                )

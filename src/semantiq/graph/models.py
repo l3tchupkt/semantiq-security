@@ -28,6 +28,8 @@ class NodeKind(str, Enum):
     REQUEST_HANDLER = "request_handler"
     MIDDLEWARE = "middleware"
     EVENT_CONSUMER = "event_consumer"
+    MESSAGE_PRODUCER = "message_producer"
+    ASYNC_QUEUE = "async_queue"
 
     # Dataflow entities
     PARAMETER = "parameter"
@@ -85,6 +87,10 @@ class EdgeKind(str, Enum):
     TRANSITIONS_STATE = "transitions_state"
     CROSSES_BOUNDARY = "crosses_boundary"
     MITIGATES = "mitigates"
+    PUBLISHES_TO = "publishes_to"
+    CONSUMES_FROM = "consumes_from"
+    DISPATCHES_ASYNC = "dispatches_async"
+    PROPAGATES_PAYLOAD = "propagates_payload"
 
 
 class RelationshipProvenance(str, Enum):
@@ -94,6 +100,8 @@ class RelationshipProvenance(str, Enum):
     STATICALLY_INFERRED = "statically_inferred"  # Inferred via static call/import resolution
     UNRESOLVED = "unresolved"  # Dynamic dispatch or unresolvable reference
     MODEL_PROPOSED = "model_proposed"  # Suggested by AI assistant, requiring local verification
+    FRAMEWORK_RESOLVED = "framework_resolved"  # Resolved via framework queue or task name conventions
+    PROBABLE_UNVERIFIED = "probable_unverified"  # Heuristically matched queue/schema without explicit binding
 
 
 class GraphNode(BaseModel):
