@@ -86,6 +86,7 @@ class SkillInputContext(BaseModel):
     patch_content: str | None = None
     external_alerts: list[dict[str, Any]] = Field(default_factory=list)
     custom_parameters: dict[str, Any] = Field(default_factory=dict)
+    shared_graph: Any = None
 
     model_config = {"arbitrary_types_allowed": True}
 

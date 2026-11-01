@@ -6,6 +6,9 @@ constructs structured causal attack chains, and calibrates severity based on rea
 
 from __future__ import annotations
 
+from collections import defaultdict
+from typing import Any
+
 from semantiq.analysis.spg_dataflow import SPGDataFlowAnalyzer
 from semantiq.graph.builder import GraphBuilder
 from semantiq.models import CodeEvidence, CodeEvidenceRole, Finding, SeverityLevel
@@ -43,15 +46,20 @@ class AttackPathAnalysisSkill(BaseSecuritySkill):
         """Trace attack paths for candidate findings."""
         sandbox.verify_graph_access()
 
-        # Build Semantic Program Graph across target files
-        files = list(context.target_files)
-        if not files:
-            files = list({f.file_path for f in context.candidate_findings if f.file_path})
+        # Reuse shared graph or build across target files
+        if context.shared_graph is not None:
+            graph = context.shared_graph
+        else:
+            files = list(context.target_files)
+            if not files:
+                files = list({f.file_path for f in context.candidate_findings if f.file_path})
+            builder = GraphBuilder(repo_root=context.repository_root)
+            graph_res = builder.build(files)
+            graph = graph_res.graph
 
-        builder = GraphBuilder(repo_root=context.repository_root)
-        graph_res = builder.build(files)
-        graph = graph_res.graph
         analyzer = SPGDataFlowAnalyzer(graph)
+        traces_by_file: dict[str, list[Any]] | None = None
+        traces_by_cat: dict[Any, list[Any]] | None = None
 
         analyzed_findings: list[Finding] = []
         for cand in context.candidate_findings:
@@ -62,12 +70,17 @@ class AttackPathAnalysisSkill(BaseSecuritySkill):
 
             # If sink or entrypoint evidence is incomplete, trace dataflow paths
             if not has_entrypoint or not has_sink:
-                traces = analyzer.trace_all_source_to_sinks()
-                matching_traces = [
-                    t
-                    for t in traces
-                    if t.sink_node.file_path == cand.file_path or t.category == cand.category
-                ]
+                if traces_by_file is None or traces_by_cat is None:
+                    all_traces = analyzer.trace_all_source_to_sinks()
+                    traces_by_file = defaultdict(list)
+                    traces_by_cat = defaultdict(list)
+                    for t in all_traces:
+                        traces_by_file[t.sink_node.file_path].append(t)
+                        traces_by_cat[t.category].append(t)
+
+                matching_traces = traces_by_file.get(cand.file_path, []) or traces_by_cat.get(
+                    cand.category, []
+                )
 
                 updated_evidence = list(cand.code_evidence)
                 if matching_traces:

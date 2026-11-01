@@ -48,13 +48,16 @@ class AdversarialValidationSkill(BaseSecuritySkill):
 
         verifier = PathAdversarialVerifier(repository_root=context.repository_root)
 
-        # Build graph if needed
-        files = list(context.target_files)
-        if not files:
-            files = list({f.file_path for f in context.candidate_findings if f.file_path})
-        builder = GraphBuilder(repo_root=context.repository_root)
-        graph_res = builder.build(files)
-        graph = graph_res.graph
+        # Reuse shared graph or build if needed
+        if context.shared_graph is not None:
+            graph = context.shared_graph
+        else:
+            files = list(context.target_files)
+            if not files:
+                files = list({f.file_path for f in context.candidate_findings if f.file_path})
+            builder = GraphBuilder(repo_root=context.repository_root)
+            graph_res = builder.build(files)
+            graph = graph_res.graph
 
         confirmed_findings: list[Finding] = []
         rejected_findings: list[Finding] = []

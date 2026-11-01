@@ -547,6 +547,16 @@ class InvestigationCoordinator:
         logger.info("Coordinating skill investigation with sequence: %s", skill_ids)
         skill_outputs: list[Any] = []
 
+        # Prebuild shared graph if target files are specified, avoiding repeated reparsing across skills
+        if getattr(context, "shared_graph", None) is None:
+            files = list(context.target_files)
+            if files:
+                builder = GraphBuilder(
+                    repo_root=self.repository_root, source_revision=self.source_revision
+                )
+                with contextlib.suppress(Exception):
+                    context.shared_graph = builder.build(files).graph
+
         for sid in skill_ids:
             if not registry.has_skill(sid):
                 logger.warning("Skipping unregistered skill: %s", sid)
@@ -572,15 +582,26 @@ class InvestigationCoordinator:
         if not files and context.candidate_findings:
             files = list({f.file_path for f in context.candidate_findings if f.file_path})
         builder = GraphBuilder(repo_root=self.repository_root, source_revision=self.source_revision)
-        graph = builder.build(files).graph if files else None
+        graph = (
+            context.shared_graph
+            if getattr(context, "shared_graph", None) is not None
+            else (builder.build(files).graph if files else None)
+        )
 
         # Consolidate via Reducer
         reducer_res = self.reducer.reduce_skill_outputs(skill_outputs, graph=graph)
 
-        # Persist findings to storage
+        # Persist findings to storage (batch for high performance)
         for f in reducer_res.consolidated_findings:
             f.scan_id = actual_scan_id
+        if hasattr(self.storage, "save_findings_batch"):
             with contextlib.suppress(Exception):
-                self.storage.save_finding(f)
+                self.storage.save_findings_batch(
+                    reducer_res.consolidated_findings, scan_id=actual_scan_id
+                )
+        else:
+            for f in reducer_res.consolidated_findings:
+                with contextlib.suppress(Exception):
+                    self.storage.save_finding(f)
 
         return reducer_res.consolidated_findings, skill_outputs, reducer_res
