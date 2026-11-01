@@ -136,7 +136,9 @@ class LiveAIInvestigator:
                         self.source_revision,
                         prior_memory.source_revision,
                     )
-                    self.storage.invalidate_stale_memory(str(self.repository_root), self.source_revision)
+                    self.storage.invalidate_stale_memory(
+                        str(self.repository_root), self.source_revision
+                    )
                     prior_memory = None
 
         executor = InvestigationToolExecutor(
@@ -193,9 +195,7 @@ class LiveAIInvestigator:
         if prompt_hint:
             initial_user_message += f"\n\nContextual Hint:\n{prompt_hint}"
 
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": initial_user_message}
-        ]
+        messages: list[dict[str, Any]] = [{"role": "user", "content": initial_user_message}]
 
         turn_count = 0
         max_turns = min(20, max(6, self.budget.max_depth * 2 + 4))
@@ -255,28 +255,40 @@ class LiveAIInvestigator:
 
                 # Execute each tool call
                 for tc in response.tool_calls:
-                    tc_record = {"call_id": tc.call_id, "tool_name": tc.tool_name, "arguments": tc.arguments}
+                    tc_record = {
+                        "call_id": tc.call_id,
+                        "tool_name": tc.tool_name,
+                        "arguments": tc.arguments,
+                    }
                     turn_record.tool_calls.append(tc_record)
 
                     tool_result = executor.execute(tc.tool_name, tc.arguments)
-                    if turn_count >= max_turns - 2 and not executor.is_finished and isinstance(tool_result, dict):
+                    if (
+                        turn_count >= max_turns - 2
+                        and not executor.is_finished
+                        and isinstance(tool_result, dict)
+                    ):
                         tool_result["_budget_notice"] = (
                             f"Notice: Turn {turn_count}/{max_turns}. Turn budget is nearing exhaustion. "
                             "Synthesize your evidence and call finish_investigation with any verified findings."
                         )
 
-                    turn_record.tool_results.append({
-                        "call_id": tc.call_id,
-                        "tool_name": tc.tool_name,
-                        "result": tool_result,
-                    })
+                    turn_record.tool_results.append(
+                        {
+                            "call_id": tc.call_id,
+                            "tool_name": tc.tool_name,
+                            "result": tool_result,
+                        }
+                    )
 
                     # Add tool response to conversation
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.call_id,
-                        "content": json.dumps(tool_result),
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.call_id,
+                            "content": json.dumps(tool_result),
+                        }
+                    )
 
                 if executor.is_finished:
                     stop_reason = "finished_by_model"
@@ -297,18 +309,22 @@ class LiveAIInvestigator:
                     or "conclude my investigation" in content_lower
                 )
                 if is_ready_to_finish or turn_count >= max_turns - 1:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "Please conclude your investigation and submit your final verified findings "
-                            "using the finish_investigation tool with exact source code citations."
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Please conclude your investigation and submit your final verified findings "
+                                "using the finish_investigation tool with exact source code citations."
+                            ),
+                        }
+                    )
                 else:
-                    messages.append({
-                        "role": "user",
-                        "content": "Continue your investigation. Select your next tool to query or verify findings.",
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "Continue your investigation. Select your next tool to query or verify findings.",
+                        }
+                    )
 
             trace.turns.append(turn_record)
 
@@ -342,7 +358,9 @@ class LiveAIInvestigator:
         if not executor.is_finished and trace.status == "RUNNING":
             stop_reason = "budget_exhausted"
             trace.status = "BUDGET_EXHAUSTED"
-            trace.status_reason = f"Investigation concluded after reaching max turns ({turn_count}/{max_turns})."
+            trace.status_reason = (
+                f"Investigation concluded after reaching max turns ({turn_count}/{max_turns})."
+            )
 
         # Finalize trace records
         trace.completed_at = datetime.now(timezone.utc).isoformat()
@@ -361,7 +379,11 @@ class LiveAIInvestigator:
             for h in executor.hypotheses.values():
                 self.storage.save_hypothesis(h, scan_id=run_id, repo_path=str(self.repository_root))
 
-            existing_paths = list(prior_memory.explored_paths) if prior_memory and prior_memory.explored_paths else []
+            existing_paths = (
+                list(prior_memory.explored_paths)
+                if prior_memory and prior_memory.explored_paths
+                else []
+            )
             existing_paths.append({"run_id": run_id, "findings_count": len(executor.findings)})
 
             mem_record = InvestigationMemoryRecord(

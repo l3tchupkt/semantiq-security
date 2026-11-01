@@ -104,7 +104,8 @@ def is_likely_test_placeholder(file_path: str, secret_text: str, rule_id: str = 
 
     # Check if file is explicitly a unit test file
     is_test_file = any(
-        path_lower.endswith(ext) for ext in ("_test.py", ".test.js", ".spec.js", ".test.ts", ".spec.ts")
+        path_lower.endswith(ext)
+        for ext in ("_test.py", ".test.js", ".spec.js", ".test.ts", ".spec.ts")
     ) or Path(file_path).name.startswith("test_")
 
     return bool(is_test_file and rule_id in {"", "SQ-SEC-005"})

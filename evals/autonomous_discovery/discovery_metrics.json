@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-01T01:51:02.990296+00:00",
+  "timestamp": "2026-11-01T02:24:00.764173+00:00",
   "provider_execution_status": "NOT RUN (API key not present in environment; deterministic engine benchmark evaluated)",
   "semantiq_version": "0.1.0",
   "targets": {
@@ -8,56 +8,69 @@
       "commit": "b9df6fc551ad6788ffd16e2451492dce12ead9cc",
       "architecture": "Bottle Web Application",
       "files_evaluated": 3,
-      "ground_truth_count": 4,
+      "ground_truth_vulnerable_count": 3,
+      "negative_controls_count": 1,
       "modes": {
         "mode_1_sequential": {
-          "true_positives": 1,
-          "false_positives": 10,
+          "true_positives": 0,
+          "false_positives": 11,
           "false_negatives": 3,
           "total_active_findings": 11,
-          "precision": 9.1,
-          "recall": 25.0,
+          "precision": 0.0,
+          "recall": 0.0,
           "exploit_path_completeness": 0.0,
-          "root_cause_accuracy": 25.0,
+          "root_cause_accuracy": 0.0,
           "severity_calibration": 100.0,
           "total_proof_gaps_identified": 0,
-          "matched_ground_truth_ids": [
+          "ground_truth_vulnerable_count": 3,
+          "negative_controls_total": 1,
+          "negative_controls_rejected": 0,
+          "matched_ground_truth_ids": [],
+          "matched_mitigated_negative_control_ids": [
             "GT-AIT-04"
           ],
           "elapsed_seconds": 0.5
         },
         "mode_2_parallel": {
-          "true_positives": 1,
-          "false_positives": 10,
+          "true_positives": 0,
+          "false_positives": 11,
           "false_negatives": 3,
           "total_active_findings": 11,
-          "precision": 9.1,
-          "recall": 25.0,
+          "precision": 0.0,
+          "recall": 0.0,
           "exploit_path_completeness": 0.0,
-          "root_cause_accuracy": 25.0,
+          "root_cause_accuracy": 0.0,
           "severity_calibration": 100.0,
           "total_proof_gaps_identified": 0,
-          "matched_ground_truth_ids": [
+          "ground_truth_vulnerable_count": 3,
+          "negative_controls_total": 1,
+          "negative_controls_rejected": 0,
+          "matched_ground_truth_ids": [],
+          "matched_mitigated_negative_control_ids": [
             "GT-AIT-04"
           ],
-          "elapsed_seconds": 1.0
+          "elapsed_seconds": 0.95
         },
         "mode_3_autonomous": {
           "true_positives": 2,
           "false_positives": 7,
-          "false_negatives": 2,
+          "false_negatives": 1,
           "total_active_findings": 8,
           "precision": 22.2,
-          "recall": 50.0,
+          "recall": 66.7,
           "exploit_path_completeness": 100.0,
-          "root_cause_accuracy": 50.0,
+          "root_cause_accuracy": 66.7,
           "severity_calibration": 100.0,
           "total_proof_gaps_identified": 0,
+          "ground_truth_vulnerable_count": 3,
+          "negative_controls_total": 1,
+          "negative_controls_rejected": 1,
           "matched_ground_truth_ids": [
             "GT-AIT-01",
             "GT-AIT-02"
           ],
-          "elapsed_seconds": 1.46,
+          "matched_mitigated_negative_control_ids": [],
+          "elapsed_seconds": 1.49,
           "coverage": {
             "total_python_files": 3,
             "total_routes_discovered": 34,
@@ -75,7 +88,8 @@
       "commit": "1b12dc7f348db8c144e0f39215680415e90ca4d2",
       "architecture": "Flask Web Application & Modular Plugin System",
       "files_evaluated": 358,
-      "ground_truth_count": 3,
+      "ground_truth_vulnerable_count": 3,
+      "negative_controls_count": 0,
       "modes": {
         "mode_1_sequential": {
           "true_positives": 1,
@@ -88,10 +102,14 @@
           "root_cause_accuracy": 33.3,
           "severity_calibration": 95.0,
           "total_proof_gaps_identified": 0,
+          "ground_truth_vulnerable_count": 3,
+          "negative_controls_total": 0,
+          "negative_controls_rejected": 0,
           "matched_ground_truth_ids": [
             "GT-PYLOAD-03"
           ],
-          "elapsed_seconds": 19.97
+          "matched_mitigated_negative_control_ids": [],
+          "elapsed_seconds": 19.01
         },
         "mode_2_parallel": {
           "true_positives": 1,
@@ -104,27 +122,34 @@
           "root_cause_accuracy": 33.3,
           "severity_calibration": 95.0,
           "total_proof_gaps_identified": 0,
+          "ground_truth_vulnerable_count": 3,
+          "negative_controls_total": 0,
+          "negative_controls_rejected": 0,
           "matched_ground_truth_ids": [
             "GT-PYLOAD-03"
           ],
-          "elapsed_seconds": 32.36
+          "matched_mitigated_negative_control_ids": [],
+          "elapsed_seconds": 31.51
         },
         "mode_3_autonomous": {
-          "true_positives": 2,
-          "false_positives": 10,
-          "false_negatives": 1,
+          "true_positives": 1,
+          "false_positives": 11,
+          "false_negatives": 2,
           "total_active_findings": 12,
-          "precision": 16.7,
-          "recall": 66.7,
+          "precision": 8.3,
+          "recall": 33.3,
           "exploit_path_completeness": 100.0,
-          "root_cause_accuracy": 66.7,
+          "root_cause_accuracy": 33.3,
           "severity_calibration": 100.0,
           "total_proof_gaps_identified": 0,
+          "ground_truth_vulnerable_count": 3,
+          "negative_controls_total": 0,
+          "negative_controls_rejected": 0,
           "matched_ground_truth_ids": [
-            "GT-PYLOAD-02",
-            "GT-PYLOAD-03"
+            "GT-PYLOAD-02"
           ],
-          "elapsed_seconds": 13.11,
+          "matched_mitigated_negative_control_ids": [],
+          "elapsed_seconds": 12.62,
           "coverage": {
             "total_python_files": 358,
             "total_routes_discovered": 140,
@@ -142,7 +167,8 @@
       "commit": "3481da9618e69063464c94447167d83bd45505a9",
       "architecture": "Python Library & Git CLI Wrapper",
       "files_evaluated": 37,
-      "ground_truth_count": 2,
+      "ground_truth_vulnerable_count": 2,
+      "negative_controls_count": 0,
       "modes": {
         "mode_1_sequential": {
           "true_positives": 0,
@@ -155,8 +181,12 @@
           "root_cause_accuracy": 0.0,
           "severity_calibration": 100.0,
           "total_proof_gaps_identified": 0,
+          "ground_truth_vulnerable_count": 2,
+          "negative_controls_total": 0,
+          "negative_controls_rejected": 0,
           "matched_ground_truth_ids": [],
-          "elapsed_seconds": 2.91
+          "matched_mitigated_negative_control_ids": [],
+          "elapsed_seconds": 2.79
         },
         "mode_2_parallel": {
           "true_positives": 0,
@@ -169,8 +199,12 @@
           "root_cause_accuracy": 0.0,
           "severity_calibration": 100.0,
           "total_proof_gaps_identified": 0,
+          "ground_truth_vulnerable_count": 2,
+          "negative_controls_total": 0,
+          "negative_controls_rejected": 0,
           "matched_ground_truth_ids": [],
-          "elapsed_seconds": 4.94
+          "matched_mitigated_negative_control_ids": [],
+          "elapsed_seconds": 5.29
         },
         "mode_3_autonomous": {
           "true_positives": 2,
@@ -183,11 +217,15 @@
           "root_cause_accuracy": 100.0,
           "severity_calibration": 100.0,
           "total_proof_gaps_identified": 0,
+          "ground_truth_vulnerable_count": 2,
+          "negative_controls_total": 0,
+          "negative_controls_rejected": 0,
           "matched_ground_truth_ids": [
             "GT-GIT-01",
             "GT-GIT-02"
           ],
-          "elapsed_seconds": 3.35,
+          "matched_mitigated_negative_control_ids": [],
+          "elapsed_seconds": 2.88,
           "coverage": {
             "total_python_files": 37,
             "total_routes_discovered": 0,
@@ -203,25 +241,28 @@
   },
   "aggregate_comparison": {
     "mode_1_sequential": {
-      "tp": 2,
-      "fp": 124,
-      "precision": 1.6,
-      "recall": 22.2,
-      "ground_truth_total": 9
+      "tp": 1,
+      "fp": 125,
+      "precision": 0.8,
+      "recall": 12.5,
+      "ground_truth_vulnerable_total": 8,
+      "negative_controls_total": 1
     },
     "mode_2_parallel": {
-      "tp": 2,
-      "fp": 124,
-      "precision": 1.6,
-      "recall": 22.2,
-      "ground_truth_total": 9
+      "tp": 1,
+      "fp": 125,
+      "precision": 0.8,
+      "recall": 12.5,
+      "ground_truth_vulnerable_total": 8,
+      "negative_controls_total": 1
     },
     "mode_3_autonomous": {
-      "tp": 6,
-      "fp": 23,
-      "precision": 20.7,
-      "recall": 66.7,
-      "ground_truth_total": 9
+      "tp": 5,
+      "fp": 24,
+      "precision": 17.2,
+      "recall": 62.5,
+      "ground_truth_vulnerable_total": 8,
+      "negative_controls_total": 1
     }
   }
 }

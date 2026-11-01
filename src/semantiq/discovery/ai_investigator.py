@@ -80,8 +80,10 @@ class AIVulnerabilityInvestigator:
         """Step 1: Build initial repository and security-context model."""
         routes = self.graph.find_nodes(kind=NodeKind.ROUTE)
         sensitive_sinks = [
-            n for n in self.graph.nodes.values()
-            if n.kind in (
+            n
+            for n in self.graph.nodes.values()
+            if n.kind
+            in (
                 NodeKind.SENSITIVE_SINK,
                 NodeKind.QUERY,
                 NodeKind.PROCESS_EXEC,
@@ -143,7 +145,10 @@ class AIVulnerabilityInvestigator:
                                 f"Route '{route_path}' executes database operations without authentication controls, "
                                 "potentially enabling unauthenticated data access or state manipulation."
                             ),
-                            preconditions=["External network reachability to route", "No global middleware blocking path"],
+                            preconditions=[
+                                "External network reachability to route",
+                                "No global middleware blocking path",
+                            ],
                             supporting_evidence=[
                                 f"Route handler {handler} has 0 authentication decorators",
                                 f"Directly reachable queries: {', '.join(boundary_info.get('queries_executed', [])[:3])}",
@@ -182,7 +187,8 @@ class AIVulnerabilityInvestigator:
 
         # Strategy C: Inconsistent Security Controls across Alternate Routes
         sensitive_sinks = [
-            n for n in self.graph.nodes.values()
+            n
+            for n in self.graph.nodes.values()
             if n.kind in (NodeKind.SENSITIVE_SINK, NodeKind.QUERY, NodeKind.PROCESS_EXEC)
         ]
         for sink in sensitive_sinks[:20]:
@@ -208,7 +214,9 @@ class AIVulnerabilityInvestigator:
                                         f"before reaching '{sink.label}', but alternate route '{u['route_path']}' "
                                         "reaches the same sensitive operation without authentication."
                                     ),
-                                    preconditions=["Attacker invokes unauthenticated route variant"],
+                                    preconditions=[
+                                        "Attacker invokes unauthenticated route variant"
+                                    ],
                                     supporting_evidence=[
                                         f"Protected route: {peer_route} (auth controls present)",
                                         f"Exposed route: {u['route_path']} (0 auth controls)",
@@ -236,10 +244,13 @@ class AIVulnerabilityInvestigator:
                         InvestigationHypothesis(
                             hypothesis_id=f"hyp_{uuid.uuid4().hex[:8]}",
                             rule_id=cand.rule_id,
-                            target_symbol=cand.locations[0].symbol or cand.rule_id if cand.locations else cand.rule_id,
+                            target_symbol=cand.locations[0].symbol or cand.rule_id
+                            if cand.locations
+                            else cand.rule_id,
                             entry_point=cand.file_path,
                             sensitive_operation=cand.category.value,
-                            statement=cand.summary or f"Potential {cand.category.value} via rule {cand.rule_id}",
+                            statement=cand.summary
+                            or f"Potential {cand.category.value} via rule {cand.rule_id}",
                             preconditions=list(cand.prerequisites),
                             supporting_evidence=[e.explanation for e in cand.code_evidence],
                             counterevidence=list(cand.counterevidence),
@@ -273,18 +284,32 @@ class AIVulnerabilityInvestigator:
 
                 # Look for state machine transitions (dispatch, fulfill, complete, deliver, approve, payout)
                 is_transition = any(
-                    k in snippet_lower for k in [
-                        "status = 'fulfilled'", 'status = "fulfilled"',
-                        "status = 'completed'", 'status = "completed"',
-                        "status = 'shipped'", 'status = "shipped"',
-                        "dispatch_order", "fulfill_order", "release_payment", "approve_request"
+                    k in snippet_lower
+                    for k in [
+                        "status = 'fulfilled'",
+                        'status = "fulfilled"',
+                        "status = 'completed'",
+                        'status = "completed"',
+                        "status = 'shipped'",
+                        'status = "shipped"',
+                        "dispatch_order",
+                        "fulfill_order",
+                        "release_payment",
+                        "approve_request",
                     ]
                 )
                 has_prerequisite_check = any(
-                    p in snippet_lower for p in [
-                        "is_paid", "payment_status", "status == 'paid'", 'status == "paid"',
-                        "payment.verify", "verify_signature", "check_permission", "assert status",
-                        "status == orderstatus.paid"
+                    p in snippet_lower
+                    for p in [
+                        "is_paid",
+                        "payment_status",
+                        "status == 'paid'",
+                        'status == "paid"',
+                        "payment.verify",
+                        "verify_signature",
+                        "check_permission",
+                        "assert status",
+                        "status == orderstatus.paid",
                     ]
                 )
 
@@ -317,6 +342,7 @@ class AIVulnerabilityInvestigator:
         hypotheses: list[InvestigationHypothesis],
     ) -> list[InvestigationHypothesis]:
         """Step 3: Multi-factor ranking by potential impact, reachability, novelty, and uncertainty."""
+
         def score_hypothesis(h: InvestigationHypothesis) -> float:
             score = 0.0
 
@@ -372,7 +398,11 @@ class AIVulnerabilityInvestigator:
         target_nodes = self.graph.find_nodes(label=hypothesis.target_symbol)
         if not target_nodes:
             # Fallback search by substring
-            target_nodes = [n for n in self.graph.nodes.values() if hypothesis.target_symbol.lower() in n.label.lower()]
+            target_nodes = [
+                n
+                for n in self.graph.nodes.values()
+                if hypothesis.target_symbol.lower() in n.label.lower()
+            ]
 
         if target_nodes:
             center_node = target_nodes[0]
@@ -391,7 +421,8 @@ class AIVulnerabilityInvestigator:
         entry_nodes = self.graph.find_nodes(label=hypothesis.entry_point)
         if not entry_nodes:
             entry_routes = [
-                r for r in self.graph.find_nodes(kind=NodeKind.ROUTE)
+                r
+                for r in self.graph.find_nodes(kind=NodeKind.ROUTE)
                 if r.properties.get("route_path") == hypothesis.entry_point
             ]
             if entry_routes:
@@ -399,7 +430,11 @@ class AIVulnerabilityInvestigator:
 
         if entry_nodes:
             e_node = entry_nodes[0]
-            if not any(ex.get("file_path") == e_node.file_path and ex.get("start_line") == e_node.start_line for ex in context["source_excerpts"]):
+            if not any(
+                ex.get("file_path") == e_node.file_path
+                and ex.get("start_line") == e_node.start_line
+                for ex in context["source_excerpts"]
+            ):
                 context["source_excerpts"].append(
                     self.graph.get_source_excerpt(
                         e_node.file_path,
@@ -433,19 +468,53 @@ class AIVulnerabilityInvestigator:
             file_p = excerpt.get("file_path", "")
 
             # Sanitizer inspection
-            if any(s in code for s in ["int(", "float(", "shlex.quote", "escape(", "validate_url", "resolve_safe_path"]):
+            if any(
+                s in code
+                for s in [
+                    "int(",
+                    "float(",
+                    "shlex.quote",
+                    "escape(",
+                    "validate_url",
+                    "resolve_safe_path",
+                ]
+            ):
                 findings_analysis["has_sanitizer"] = True
-                findings_analysis["observed_counterevidence"].append(f"Input transformation/sanitizer found in {file_p}")
+                findings_analysis["observed_counterevidence"].append(
+                    f"Input transformation/sanitizer found in {file_p}"
+                )
 
             # Inline auth inspection
-            if any(a in code for a in ["session.get('user", "current_user.is_authenticated", "abort(401)", "abort(403)", "has_permission"]):
+            if any(
+                a in code
+                for a in [
+                    "session.get('user",
+                    "current_user.is_authenticated",
+                    "abort(401)",
+                    "abort(403)",
+                    "has_permission",
+                ]
+            ):
                 findings_analysis["has_auth_guard"] = True
-                findings_analysis["observed_counterevidence"].append(f"Inline authentication/authorization guard verified in {file_p}")
+                findings_analysis["observed_counterevidence"].append(
+                    f"Inline authentication/authorization guard verified in {file_p}"
+                )
 
             # State check inspection
-            if any(c in code for c in ["if order.status ==", "if status ==", "is_paid", "payment_status == 'paid'", "orderstatus.paid"]):
+            if any(
+                c in code
+                for c in [
+                    "if order.status ==",
+                    "if status ==",
+                    "is_paid",
+                    "payment_status == 'paid'",
+                    "orderstatus.paid",
+                ]
+            ):
                 findings_analysis["has_state_invariant"] = True
-                findings_analysis["observed_counterevidence"].append(f"State transition invariant checked in {file_p}")
+                findings_analysis["observed_counterevidence"].append(
+                    f"State transition invariant checked in {file_p}"
+                )
 
         # Check route boundaries
         for boundary in self.intelligence.auth_boundaries:
@@ -456,10 +525,14 @@ class AIVulnerabilityInvestigator:
                         f"Route {boundary.route_path} enforces authentication decorator: {', '.join(boundary.auth_decorators)}"
                     )
                 if boundary.is_admin_only:
-                    findings_analysis["observed_counterevidence"].append(f"Route {boundary.route_path} requires administrative role")
+                    findings_analysis["observed_counterevidence"].append(
+                        f"Route {boundary.route_path} requires administrative role"
+                    )
 
         # Determine missing controls
-        if not findings_analysis["has_auth_guard"] and hypothesis.entry_point.startswith(("/", "api")):
+        if not findings_analysis["has_auth_guard"] and hypothesis.entry_point.startswith(
+            ("/", "api")
+        ):
             findings_analysis["missing_controls"].append("authentication_decorator")
         if not findings_analysis["has_state_invariant"] and "STATE" in hypothesis.rule_id:
             findings_analysis["missing_controls"].append("state_prerequisite_validation")
@@ -482,10 +555,17 @@ class AIVulnerabilityInvestigator:
         if analysis["has_state_invariant"] and "STATE" in hypothesis.rule_id:
             disposition = "mitigated"
             counterevidence.append("Hypothesis disproved: State invariant verified in source code.")
-        elif analysis["has_sanitizer"] and any(k in hypothesis.sensitive_operation for k in ["query", "database", "command"]):
+        elif analysis["has_sanitizer"] and any(
+            k in hypothesis.sensitive_operation for k in ["query", "database", "command"]
+        ):
             disposition = "mitigated"
-            counterevidence.append("Hypothesis neutralized: Context-sensitive sanitizer enforces safety.")
-        elif any("requires administrative role" in c for c in counterevidence) and "UNAUTH" in hypothesis.rule_id:
+            counterevidence.append(
+                "Hypothesis neutralized: Context-sensitive sanitizer enforces safety."
+            )
+        elif (
+            any("requires administrative role" in c for c in counterevidence)
+            and "UNAUTH" in hypothesis.rule_id
+        ):
             disposition = "false_positive"
         elif len(analysis["missing_controls"]) > 0:
             disposition = "confirmed"
@@ -504,9 +584,15 @@ class AIVulnerabilityInvestigator:
 
         # Step 1: Attacker Entry
         entry_loc = SourceLocation(
-            file_path=context["source_excerpts"][0]["file_path"] if context["source_excerpts"] else hypothesis.entry_point,
-            start_line=context["source_excerpts"][0]["start_line"] if context["source_excerpts"] else 1,
-            end_line=context["source_excerpts"][0]["start_line"] + 5 if context["source_excerpts"] else 5,
+            file_path=context["source_excerpts"][0]["file_path"]
+            if context["source_excerpts"]
+            else hypothesis.entry_point,
+            start_line=context["source_excerpts"][0]["start_line"]
+            if context["source_excerpts"]
+            else 1,
+            end_line=context["source_excerpts"][0]["start_line"] + 5
+            if context["source_excerpts"]
+            else 5,
             symbol=hypothesis.entry_point,
             role="entry_point",
         )
@@ -516,7 +602,9 @@ class AIVulnerabilityInvestigator:
                 location=entry_loc,
                 operation_type="entry_point",
                 description=f"Attacker transmits untrusted request payload to entry point '{hypothesis.entry_point}'",
-                actor_capability="unauthenticated_attacker" if "authentication_decorator" in analysis["missing_controls"] else "authenticated_user",
+                actor_capability="unauthenticated_attacker"
+                if "authentication_decorator" in analysis["missing_controls"]
+                else "authenticated_user",
                 trust_boundary_crossed="public_network_to_application",
                 preconditions=list(hypothesis.preconditions),
             )
@@ -532,7 +620,11 @@ class AIVulnerabilityInvestigator:
             steps.append(
                 AttackChainStep(
                     step_number=step_num,
-                    location=SourceLocation(file_path=entry_loc.file_path, start_line=entry_loc.start_line, end_line=entry_loc.end_line),
+                    location=SourceLocation(
+                        file_path=entry_loc.file_path,
+                        start_line=entry_loc.start_line,
+                        end_line=entry_loc.end_line,
+                    ),
                     operation_type="dispatch",
                     description=f"Interprocedural invocation propagates control/data from {source_id} to {target_id}",
                     actor_capability="unauthenticated_attacker",
@@ -542,9 +634,15 @@ class AIVulnerabilityInvestigator:
 
         # Target operation
         target_loc = SourceLocation(
-            file_path=context["source_excerpts"][-1]["file_path"] if context["source_excerpts"] else "app/service.py",
-            start_line=context["source_excerpts"][-1]["start_line"] if context["source_excerpts"] else 10,
-            end_line=context["source_excerpts"][-1]["end_line"] if context["source_excerpts"] else 20,
+            file_path=context["source_excerpts"][-1]["file_path"]
+            if context["source_excerpts"]
+            else "app/service.py",
+            start_line=context["source_excerpts"][-1]["start_line"]
+            if context["source_excerpts"]
+            else 10,
+            end_line=context["source_excerpts"][-1]["end_line"]
+            if context["source_excerpts"]
+            else 20,
             symbol=hypothesis.target_symbol,
             role="sink",
         )
@@ -558,13 +656,17 @@ class AIVulnerabilityInvestigator:
                 trust_boundary_crossed="internal_service_to_data_layer",
                 supporting_evidence=[
                     CodeEvidence(
-                        snippet=context["source_excerpts"][-1]["snippet"] if context["source_excerpts"] else "",
+                        snippet=context["source_excerpts"][-1]["snippet"]
+                        if context["source_excerpts"]
+                        else "",
                         start_line=target_loc.start_line,
                         end_line=target_loc.end_line,
                         explanation=f"Sink execution verified in source code at {target_loc.file_path}:{target_loc.start_line}",
                         role="sink",
                     )
-                ] if context["source_excerpts"] else [],
+                ]
+                if context["source_excerpts"]
+                else [],
                 counterevidence=list(analysis["observed_counterevidence"]),
             )
         )
@@ -574,12 +676,16 @@ class AIVulnerabilityInvestigator:
             title=f"Attack Chain: {hypothesis.entry_point} -> {hypothesis.target_symbol}",
             starting_point=hypothesis.entry_point,
             target_operation=hypothesis.target_symbol,
-            attacker_capability="unauthenticated_attacker" if "authentication_decorator" in analysis["missing_controls"] else "authenticated_user",
+            attacker_capability="unauthenticated_attacker"
+            if "authentication_decorator" in analysis["missing_controls"]
+            else "authenticated_user",
             preconditions=list(hypothesis.preconditions),
             steps=steps,
             trust_boundaries=["public_to_internal", "application_to_datastore"],
             potential_impact=hypothesis.statement,
-            validation_requirements=["Verify route parameters reach sink without intermediate auth barrier"],
+            validation_requirements=[
+                "Verify route parameters reach sink without intermediate auth barrier"
+            ],
             is_exploitable_estimate=len(analysis["observed_counterevidence"]) == 0,
         )
 
@@ -627,23 +733,32 @@ class AIVulnerabilityInvestigator:
                     _prompt = (
                         f"Evaluate this vulnerability hypothesis:\n{hyp.statement}\n\n"
                         f"Code context:\n"
-                        + "\n---\n".join(ex.get("snippet", "") for ex in target_context.get("source_excerpts", []))
+                        + "\n---\n".join(
+                            ex.get("snippet", "")
+                            for ex in target_context.get("source_excerpts", [])
+                        )
                         + "\n\nIdentify any neutralizing security controls or state preconditions. "
                         "State whether this flaw is real, mitigated, or false positive."
                     )
-                    hyp.uncertainty = (hyp.uncertainty or "") + " [Evaluated against model-assisted self-critique]"
+                    hyp.uncertainty = (
+                        hyp.uncertainty or ""
+                    ) + " [Evaluated against model-assisted self-critique]"
                 except Exception:
                     pass
 
             # Step 8: Challenge Hypothesis & Determine Disposition
-            disposition, supporting, counterevidence = self.challenge_hypothesis(hyp, analysis, target_context)
+            disposition, supporting, counterevidence = self.challenge_hypothesis(
+                hyp, analysis, target_context
+            )
             hyp.disposition = disposition
             hyp.supporting_evidence = supporting
             hyp.counterevidence = counterevidence
 
             # Persist hypothesis to storage
             if self.storage:
-                self.storage.save_hypothesis(hyp, scan_id=scan_id, repo_path=str(self.repository_root))
+                self.storage.save_hypothesis(
+                    hyp, scan_id=scan_id, repo_path=str(self.repository_root)
+                )
 
             # Disproved or neutralized hypotheses are recorded but not surfaced as active findings
             if disposition == "mitigated":
@@ -653,7 +768,9 @@ class AIVulnerabilityInvestigator:
             attack_chain = self.synthesize_attack_chain(hyp, target_context, analysis)
 
             # Step 12: Produce Verified Finding
-            primary_excerpt = target_context["source_excerpts"][-1] if target_context["source_excerpts"] else None
+            primary_excerpt = (
+                target_context["source_excerpts"][-1] if target_context["source_excerpts"] else None
+            )
             loc = SourceLocation(
                 file_path=primary_excerpt["file_path"] if primary_excerpt else "app/service.py",
                 start_line=primary_excerpt["start_line"] if primary_excerpt else 1,
@@ -690,8 +807,12 @@ class AIVulnerabilityInvestigator:
                 title=f"Discovered Vulnerability: {hyp.target_symbol} ({category.value})",
                 summary=hyp.statement,
                 category=category,
-                severity=SeverityLevel.HIGH if "CHAIN" in hyp.rule_id or "STATE" in hyp.rule_id else SeverityLevel.MEDIUM,
-                confidence=ConfidenceLevel.HIGH if len(counterevidence) == 0 else ConfidenceLevel.MEDIUM,
+                severity=SeverityLevel.HIGH
+                if "CHAIN" in hyp.rule_id or "STATE" in hyp.rule_id
+                else SeverityLevel.MEDIUM,
+                confidence=ConfidenceLevel.HIGH
+                if len(counterevidence) == 0
+                else ConfidenceLevel.MEDIUM,
                 file_path=loc.file_path,
                 start_line=loc.start_line,
                 end_line=loc.end_line,
@@ -705,7 +826,9 @@ class AIVulnerabilityInvestigator:
                 attack_chain=[f"{s.step_number}. {s.description}" for s in attack_chain.steps],
                 structured_attack_chain=attack_chain,
                 hypothesis=hyp,
-                validation_status=ValidationStatus.EVIDENCE_SUPPORTED if len(counterevidence) == 0 else ValidationStatus.CANDIDATE,
+                validation_status=ValidationStatus.EVIDENCE_SUPPORTED
+                if len(counterevidence) == 0
+                else ValidationStatus.CANDIDATE,
                 discovery_backend="ai_investigator",
                 scan_id=scan_id,
             )
@@ -737,9 +860,17 @@ class AIVulnerabilityInvestigator:
                 architecture_summary=sec_context,
                 entry_points=sec_context.get("routes", []),
                 security_boundaries=[b.model_dump() for b in self.intelligence.auth_boundaries],
-                explored_paths=[{"chain_id": f.structured_attack_chain.chain_id, "title": f.title} for f in findings if f.structured_attack_chain],
+                explored_paths=[
+                    {"chain_id": f.structured_attack_chain.chain_id, "title": f.title}
+                    for f in findings
+                    if f.structured_attack_chain
+                ],
                 hypotheses=[h.model_dump() for h in bounded_hypotheses],
-                counterevidence_catalog=[{"hyp_id": h.hypothesis_id, "counter": h.counterevidence} for h in bounded_hypotheses if h.counterevidence],
+                counterevidence_catalog=[
+                    {"hyp_id": h.hypothesis_id, "counter": h.counterevidence}
+                    for h in bounded_hypotheses
+                    if h.counterevidence
+                ],
                 analysis_gaps=[u for u in sec_context.get("unresolved", [])],
             )
             self.storage.save_repository_memory(mem_record)

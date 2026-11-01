@@ -135,8 +135,12 @@ class InvestigationReducer:
                 surviving_findings.append(f)
 
         # Separate candidates to be deduplicated (active candidates) vs already rejected
-        active_candidates = [f for f in surviving_findings if f.lifecycle_state != FindingLifecycleState.REJECTED]
-        already_rejected = [f for f in surviving_findings if f.lifecycle_state == FindingLifecycleState.REJECTED]
+        active_candidates = [
+            f for f in surviving_findings if f.lifecycle_state != FindingLifecycleState.REJECTED
+        ]
+        already_rejected = [
+            f for f in surviving_findings if f.lifecycle_state == FindingLifecycleState.REJECTED
+        ]
 
         # 3. Evidence-Preserving Deduplication via Semantic Finding Identity
         dedup_res = self.deduplicator.deduplicate(active_candidates, graph=graph)
@@ -150,7 +154,10 @@ class InvestigationReducer:
                         finding_id=decision.primary_finding_id,
                         outcome="MERGED",
                         reason=decision.rationale,
-                        contributing_workers=[decision.primary_finding_id, decision.secondary_finding_id],
+                        contributing_workers=[
+                            decision.primary_finding_id,
+                            decision.secondary_finding_id,
+                        ],
                     )
                 )
             elif decision.outcome == EquivalenceOutcome.UNCERTAIN:
@@ -173,7 +180,9 @@ class InvestigationReducer:
                     finding_id=sec.finding_id,
                     outcome="DUPLICATE",
                     reason=f"Merged into canonical primary finding {sec.metadata.get('primary_finding_id', '')}",
-                    contributing_workers=sec.metadata.get("contributing_workers", [sec.metadata.get("worker_id", "")]),
+                    contributing_workers=sec.metadata.get(
+                        "contributing_workers", [sec.metadata.get("worker_id", "")]
+                    ),
                 )
             )
         consolidated.extend(dedup_res.secondary_duplicate_findings)
@@ -184,14 +193,19 @@ class InvestigationReducer:
         merged_cnt = dedup_res.merged_count
 
         for f in dedup_res.consolidated_findings:
-            if not any(d.finding_id == f.finding_id and d.outcome in ("MERGED", "CONTRADICTED") for d in decisions):
+            if not any(
+                d.finding_id == f.finding_id and d.outcome in ("MERGED", "CONTRADICTED")
+                for d in decisions
+            ):
                 decisions.append(
                     ReducerDecision(
                         decision_id=f"dec_accept_{f.finding_id[:8]}",
                         finding_id=f.finding_id,
                         outcome="ACCEPTED",
                         reason="Verified independent finding with grounded code evidence",
-                        contributing_workers=f.metadata.get("contributing_workers", [f.metadata.get("worker_id", "")]),
+                        contributing_workers=f.metadata.get(
+                            "contributing_workers", [f.metadata.get("worker_id", "")]
+                        ),
                     )
                 )
 

@@ -113,7 +113,9 @@ class InvestigationOrchestrator:
             # Check budget constraints
             if time.perf_counter() - t_start > self.budget.timeout_seconds:
                 candidate.uncertainty += " [Investigation truncated by timeout budget]"
-                self._score_and_prioritize_candidate(candidate, "unknown", [f"{candidate.file_path}:{candidate.start_line}"])
+                self._score_and_prioritize_candidate(
+                    candidate, "unknown", [f"{candidate.file_path}:{candidate.start_line}"]
+                )
                 investigated.append(candidate)
                 continue
 
@@ -175,7 +177,9 @@ class InvestigationOrchestrator:
         findings: list[Finding] = []
         has_auth_elsewhere = any(b.is_authenticated for b in self.intelligence.auth_boundaries)
         for boundary in self.intelligence.auth_boundaries:
-            is_sensitive_method = any(m in {"DELETE", "PUT", "POST", "PATCH"} for m in boundary.http_methods)
+            is_sensitive_method = any(
+                m in {"DELETE", "PUT", "POST", "PATCH"} for m in boundary.http_methods
+            )
             is_sensitive_name = any(
                 k in boundary.handler_name.lower()
                 for k in ["delete", "remove", "update", "admin", "manage", "purge", "role"]
@@ -187,7 +191,9 @@ class InvestigationOrchestrator:
                     rule = GLOBAL_RULE_REGISTRY.get_rule("SQ-PY-014")
                     finding_id = f"sqf_sq-py-014_{boundary.line}"
                     occurrence_id = f"occ_sq-py-014_{boundary.line}"
-                    snippet = self._read_source_snippet(boundary.file_path, boundary.line, boundary.line + 8)
+                    snippet = self._read_source_snippet(
+                        boundary.file_path, boundary.line, boundary.line + 8
+                    )
 
                     loc = SourceLocation(
                         file_path=boundary.file_path,
@@ -212,19 +218,30 @@ class InvestigationOrchestrator:
                         summary=f"Sensitive endpoint '{boundary.route_path}' is accessible without authentication decorators while peer endpoints enforce access controls.",
                         category=VulnerabilityCategory.AUTHORIZATION_BYPASS,
                         severity=SeverityLevel.HIGH,
-                        confidence=ConfidenceLevel.HIGH if has_auth_elsewhere else ConfidenceLevel.MEDIUM,
+                        confidence=ConfidenceLevel.HIGH
+                        if has_auth_elsewhere
+                        else ConfidenceLevel.MEDIUM,
                         cwe_ids=["CWE-285", "CWE-306"],
                         file_path=boundary.file_path,
                         start_line=boundary.line,
                         end_line=boundary.line + 4,
                         locations=[loc],
                         code_evidence=[evidence],
-                        data_flow=[DataFlowStep(location=loc, description=f"Unauthenticated request dispatched to {boundary.handler_name}")],
+                        data_flow=[
+                            DataFlowStep(
+                                location=loc,
+                                description=f"Unauthenticated request dispatched to {boundary.handler_name}",
+                            )
+                        ],
                         impact="Unauthenticated external clients can execute state-altering actions without role verification.",
                         prerequisites=["Attacker has network connectivity to endpoint route"],
-                        conditions_required=["No global or route-level authentication middleware enforced"],
+                        conditions_required=[
+                            "No global or route-level authentication middleware enforced"
+                        ],
                         validation_status=ValidationStatus.EVIDENCE_SUPPORTED,
-                        remediation=rule.remediation_advice if rule else "Add @login_required or role verification decorator.",
+                        remediation=rule.remediation_advice
+                        if rule
+                        else "Add @login_required or role verification decorator.",
                         discovery_backend="intelligence_orchestrator",
                         scan_id=scan_id,
                     )
@@ -238,13 +255,23 @@ class InvestigationOrchestrator:
         for boundary in self.intelligence.auth_boundaries:
             for sym in self.intelligence.symbols.get(boundary.file_path, []):
                 if sym.qualified_name == boundary.handler_name:
-                    id_params = [p for p in sym.parameters if any(k in p.lower() for k in ["id", "uid", "account", "doc", "item", "order"])]
+                    id_params = [
+                        p
+                        for p in sym.parameters
+                        if any(
+                            k in p.lower() for k in ["id", "uid", "account", "doc", "item", "order"]
+                        )
+                    ]
                     if id_params and not boundary.is_admin_only:
-                        has_ownership_check, query_line = self._inspect_idor_vulnerability(boundary.file_path, sym.start_line, sym.end_line, id_params)
+                        has_ownership_check, query_line = self._inspect_idor_vulnerability(
+                            boundary.file_path, sym.start_line, sym.end_line, id_params
+                        )
                         if not has_ownership_check and query_line > 0:
                             finding_id = f"sqf_sq-py-013_{query_line}"
                             occurrence_id = f"occ_sq-py-013_{query_line}"
-                            snippet = self._read_source_snippet(boundary.file_path, sym.start_line, sym.end_line)
+                            snippet = self._read_source_snippet(
+                                boundary.file_path, sym.start_line, sym.end_line
+                            )
                             rule = GLOBAL_RULE_REGISTRY.get_rule("SQ-PY-013")
 
                             loc = SourceLocation(
@@ -278,14 +305,32 @@ class InvestigationOrchestrator:
                                 locations=[loc],
                                 code_evidence=[evidence],
                                 data_flow=[
-                                    DataFlowStep(location=SourceLocation(file_path=boundary.file_path, start_line=sym.start_line, end_line=sym.start_line, symbol=boundary.handler_name, role="source"), description=f"Route parameter '{id_params[0]}' provided by client"),
-                                    DataFlowStep(location=loc, description=f"Resource query executed without session user verification at line {query_line}"),
+                                    DataFlowStep(
+                                        location=SourceLocation(
+                                            file_path=boundary.file_path,
+                                            start_line=sym.start_line,
+                                            end_line=sym.start_line,
+                                            symbol=boundary.handler_name,
+                                            role="source",
+                                        ),
+                                        description=f"Route parameter '{id_params[0]}' provided by client",
+                                    ),
+                                    DataFlowStep(
+                                        location=loc,
+                                        description=f"Resource query executed without session user verification at line {query_line}",
+                                    ),
                                 ],
                                 impact="Unauthorized users can access or tamper with resources belonging to arbitrary users by altering resource IDs.",
-                                prerequisites=["Attacker has access to valid account and can guess or enumerate resource IDs"],
-                                conditions_required=["Lookup queries purely on primary key without user_id filter"],
+                                prerequisites=[
+                                    "Attacker has access to valid account and can guess or enumerate resource IDs"
+                                ],
+                                conditions_required=[
+                                    "Lookup queries purely on primary key without user_id filter"
+                                ],
                                 validation_status=ValidationStatus.EVIDENCE_SUPPORTED,
-                                remediation=rule.remediation_advice if rule else "Filter query by authenticated session user ID.",
+                                remediation=rule.remediation_advice
+                                if rule
+                                else "Filter query by authenticated session user ID.",
                                 discovery_backend="intelligence_orchestrator",
                                 scan_id=scan_id,
                             )
@@ -297,9 +342,8 @@ class InvestigationOrchestrator:
         """Detect cross-tenant data leakage via queries lacking tenant/org filters (SQ-PY-015)."""
         findings: list[Finding] = []
         # Only inspect for cross-tenant defects if the repository exhibits multi-tenant architecture
-        has_repo_tenancy = (
-            bool(self.intelligence.multi_tenant_indicators)
-            or any("tenant" in f.lower() for f in self.intelligence.file_metadata)
+        has_repo_tenancy = bool(self.intelligence.multi_tenant_indicators) or any(
+            "tenant" in f.lower() for f in self.intelligence.file_metadata
         )
         if not has_repo_tenancy:
             return findings
@@ -307,14 +351,15 @@ class InvestigationOrchestrator:
         for file_path, symbols in self.intelligence.symbols.items():
             for sym in symbols:
                 name_lower = sym.name.lower()
-                is_tenant_context = (
-                    "tenant" in file_path.lower()
-                    or any(k in name_lower for k in ["tenant", "org", "workspace", "account", "invoice"])
+                is_tenant_context = "tenant" in file_path.lower() or any(
+                    k in name_lower for k in ["tenant", "org", "workspace", "account", "invoice"]
                 )
                 if not is_tenant_context:
                     continue
 
-                has_leak, query_line = self._inspect_tenant_isolation(file_path, sym.start_line, sym.end_line)
+                has_leak, query_line = self._inspect_tenant_isolation(
+                    file_path, sym.start_line, sym.end_line
+                )
                 if has_leak and query_line > 0:
                     rule = GLOBAL_RULE_REGISTRY.get_rule("SQ-PY-015")
                     finding_id = f"sqf_sq-py-015_{query_line}"
@@ -352,7 +397,13 @@ class InvestigationOrchestrator:
                         code_evidence=[evidence],
                         data_flow=[
                             DataFlowStep(
-                                location=SourceLocation(file_path=file_path, start_line=sym.start_line, end_line=sym.start_line, symbol=sym.qualified_name, role="source"),
+                                location=SourceLocation(
+                                    file_path=file_path,
+                                    start_line=sym.start_line,
+                                    end_line=sym.start_line,
+                                    symbol=sym.qualified_name,
+                                    role="source",
+                                ),
                                 description=f"Tenant operation dispatched to {sym.qualified_name}",
                             ),
                             DataFlowStep(
@@ -361,10 +412,14 @@ class InvestigationOrchestrator:
                             ),
                         ],
                         impact="Cross-tenant information disclosure; users in one tenant can view or mutate data belonging to other tenants.",
-                        prerequisites=["Application serves multiple tenants sharing database tables"],
+                        prerequisites=[
+                            "Application serves multiple tenants sharing database tables"
+                        ],
                         conditions_required=["Query omits tenant_id/org_id filter condition"],
                         validation_status=ValidationStatus.EVIDENCE_SUPPORTED,
-                        remediation=rule.remediation_advice if rule else "Enforce tenant_id = current_tenant.id in WHERE clause.",
+                        remediation=rule.remediation_advice
+                        if rule
+                        else "Enforce tenant_id = current_tenant.id in WHERE clause.",
                         discovery_backend="intelligence_orchestrator",
                         scan_id=scan_id,
                     )
@@ -378,13 +433,16 @@ class InvestigationOrchestrator:
         for file_path, symbols in self.intelligence.symbols.items():
             for sym in symbols:
                 has_file_param = any(
-                    k in p.lower() for p in sym.parameters
+                    k in p.lower()
+                    for p in sym.parameters
                     for k in ["file_name", "filename", "file_path", "doc_path", "export_name"]
                 )
                 if not has_file_param:
                     continue
 
-                has_insecure_file, sink_line = self._inspect_file_authorization(file_path, sym.start_line, sym.end_line)
+                has_insecure_file, sink_line = self._inspect_file_authorization(
+                    file_path, sym.start_line, sym.end_line
+                )
                 if has_insecure_file and sink_line > 0:
                     rule = GLOBAL_RULE_REGISTRY.get_rule("SQ-PY-016")
                     finding_id = f"sqf_sq-py-016_{sink_line}"
@@ -421,14 +479,30 @@ class InvestigationOrchestrator:
                         locations=[loc],
                         code_evidence=[evidence],
                         data_flow=[
-                            DataFlowStep(location=SourceLocation(file_path=file_path, start_line=sym.start_line, end_line=sym.start_line, symbol=sym.qualified_name, role="source"), description="Filename parameter accepted from caller"),
-                            DataFlowStep(location=loc, description=f"File read or sent at line {sink_line} without verifying resource ownership"),
+                            DataFlowStep(
+                                location=SourceLocation(
+                                    file_path=file_path,
+                                    start_line=sym.start_line,
+                                    end_line=sym.start_line,
+                                    symbol=sym.qualified_name,
+                                    role="source",
+                                ),
+                                description="Filename parameter accepted from caller",
+                            ),
+                            DataFlowStep(
+                                location=loc,
+                                description=f"File read or sent at line {sink_line} without verifying resource ownership",
+                            ),
                         ],
                         impact="Attackers can download or access arbitrary files belonging to other users or internal system records.",
                         prerequisites=["Attacker knows or guesses existing filenames"],
-                        conditions_required=["File access relies directly on filename without user permission check"],
+                        conditions_required=[
+                            "File access relies directly on filename without user permission check"
+                        ],
                         validation_status=ValidationStatus.EVIDENCE_SUPPORTED,
-                        remediation=rule.remediation_advice if rule else "Validate user ownership before calling send_file() or open().",
+                        remediation=rule.remediation_advice
+                        if rule
+                        else "Validate user ownership before calling send_file() or open().",
                         discovery_backend="intelligence_orchestrator",
                         scan_id=scan_id,
                     )
@@ -441,7 +515,9 @@ class InvestigationOrchestrator:
         findings: list[Finding] = []
         for file_path, symbols in self.intelligence.symbols.items():
             for sym in symbols:
-                has_exposure, line_num = self._inspect_sensitive_exposure(file_path, sym.start_line, sym.end_line)
+                has_exposure, line_num = self._inspect_sensitive_exposure(
+                    file_path, sym.start_line, sym.end_line
+                )
                 if has_exposure and line_num > 0:
                     rule = GLOBAL_RULE_REGISTRY.get_rule("SQ-PY-017")
                     finding_id = f"sqf_sq-py-017_{line_num}"
@@ -478,13 +554,20 @@ class InvestigationOrchestrator:
                         locations=[loc],
                         code_evidence=[evidence],
                         data_flow=[
-                            DataFlowStep(location=loc, description=f"Sensitive credential included in output serialization or log at line {line_num}"),
+                            DataFlowStep(
+                                location=loc,
+                                description=f"Sensitive credential included in output serialization or log at line {line_num}",
+                            ),
                         ],
                         impact="Sensitive credentials or tokens leaked to client or recorded in plaintext log files.",
                         prerequisites=["Client can view API responses or access application logs"],
-                        conditions_required=["Response dictionary or log includes unmasked credential fields"],
+                        conditions_required=[
+                            "Response dictionary or log includes unmasked credential fields"
+                        ],
                         validation_status=ValidationStatus.EVIDENCE_SUPPORTED,
-                        remediation=rule.remediation_advice if rule else "Omit password and token fields from API response dictionaries.",
+                        remediation=rule.remediation_advice
+                        if rule
+                        else "Omit password and token fields from API response dictionaries.",
                         discovery_backend="intelligence_orchestrator",
                         scan_id=scan_id,
                     )
@@ -497,7 +580,9 @@ class InvestigationOrchestrator:
         findings: list[Finding] = []
         for file_path, symbols in self.intelligence.symbols.items():
             for sym in symbols:
-                has_flaw, line_num = self._inspect_state_transition_invariant(file_path, sym.start_line, sym.end_line)
+                has_flaw, line_num = self._inspect_state_transition_invariant(
+                    file_path, sym.start_line, sym.end_line
+                )
                 if has_flaw and line_num > 0:
                     rule = GLOBAL_RULE_REGISTRY.get_rule("SQ-PY-018")
                     finding_id = f"sqf_sq-py-018_{line_num}"
@@ -534,13 +619,22 @@ class InvestigationOrchestrator:
                         locations=[loc],
                         code_evidence=[evidence],
                         data_flow=[
-                            DataFlowStep(location=loc, description=f"State modified without verifying precondition status at line {line_num}"),
+                            DataFlowStep(
+                                location=loc,
+                                description=f"State modified without verifying precondition status at line {line_num}",
+                            ),
                         ],
                         impact="Attackers can bypass workflow requirements (e.g. obtain fulfilled orders without paying) by directly invoking transition actions.",
-                        prerequisites=["Client can call workflow transition endpoint out of sequence"],
-                        conditions_required=["Transition does not verify that order is in verified paid status"],
+                        prerequisites=[
+                            "Client can call workflow transition endpoint out of sequence"
+                        ],
+                        conditions_required=[
+                            "Transition does not verify that order is in verified paid status"
+                        ],
                         validation_status=ValidationStatus.EVIDENCE_SUPPORTED,
-                        remediation=rule.remediation_advice if rule else "Enforce state machine invariant: verify order.status == PAID before transition.",
+                        remediation=rule.remediation_advice
+                        if rule
+                        else "Enforce state machine invariant: verify order.status == PAID before transition.",
                         discovery_backend="intelligence_orchestrator",
                         scan_id=scan_id,
                     )
@@ -576,7 +670,9 @@ class InvestigationOrchestrator:
                 None,
             )
             if caller_edge:
-                call_chain.insert(0, f"{caller_edge.caller_file}:{caller_edge.line} ({caller_edge.caller_symbol})")
+                call_chain.insert(
+                    0, f"{caller_edge.caller_file}:{caller_edge.line} ({caller_edge.caller_symbol})"
+                )
                 curr_symbol = caller_edge.caller_symbol
                 curr_file = caller_edge.caller_file
             else:
@@ -592,7 +688,9 @@ class InvestigationOrchestrator:
                 (b for b in self.intelligence.auth_boundaries if b.file_path == curr_file),
                 None,
             )
-        entry_name = entry_boundary.route_path if entry_boundary else (curr_symbol or "module_scope")
+        entry_name = (
+            entry_boundary.route_path if entry_boundary else (curr_symbol or "module_scope")
+        )
         return entry_name, call_chain
 
     def _construct_hypothesis(
@@ -627,14 +725,20 @@ class InvestigationOrchestrator:
 
         # Supporting evidence
         if finding.data_flow:
-            supporting.append(f"Direct dataflow trace verified through {len(finding.data_flow)} step(s)")
-        supporting.append(f"Reaches security-sensitive sink at {finding.file_path}:{finding.start_line}")
+            supporting.append(
+                f"Direct dataflow trace verified through {len(finding.data_flow)} step(s)"
+            )
+        supporting.append(
+            f"Reaches security-sensitive sink at {finding.file_path}:{finding.start_line}"
+        )
 
         # Counterevidence: Check route auth boundaries
         for b in self.intelligence.auth_boundaries:
             if b.route_path == entry_point or b.file_path == finding.file_path:
                 if b.is_authenticated:
-                    counterevidence.append(f"Route is protected by authentication decorator(s): {', '.join(b.auth_decorators)}")
+                    counterevidence.append(
+                        f"Route is protected by authentication decorator(s): {', '.join(b.auth_decorators)}"
+                    )
                 if b.is_admin_only:
                     counterevidence.append("Route is restricted to administrative privileges")
                 if b.is_tenant_scoped:
@@ -642,7 +746,9 @@ class InvestigationOrchestrator:
 
         # Counterevidence: Check sanitizers
         if finding.sanitizers_considered:
-            counterevidence.append(f"Sanitizers inspected: {', '.join(finding.sanitizers_considered)}")
+            counterevidence.append(
+                f"Sanitizers inspected: {', '.join(finding.sanitizers_considered)}"
+            )
 
         return supporting, counterevidence
 
@@ -658,7 +764,9 @@ class InvestigationOrchestrator:
             return
 
         # Request bounded analysis
-        candidate.uncertainty = (candidate.uncertainty or "") + " [Inspected by AI model with local source citation verification]"
+        candidate.uncertainty = (
+            candidate.uncertainty or ""
+        ) + " [Inspected by AI model with local source citation verification]"
 
     def _determine_validation_status(
         self,
@@ -682,7 +790,8 @@ class InvestigationOrchestrator:
         if has_unresolved:
             candidate.confidence = ConfidenceLevel.MEDIUM
             unresolved_names = [
-                u.call_expression for u in self.intelligence.unresolved_calls
+                u.call_expression
+                for u in self.intelligence.unresolved_calls
                 if any(u.file_path in step for step in call_chain)
             ]
             expr_str = ", ".join(unresolved_names[:3]) or "dynamic dispatch"
@@ -715,7 +824,8 @@ class InvestigationOrchestrator:
         # Reachability factor (0 - 30)
         is_route = any(b.route_path == entry_point for b in self.intelligence.auth_boundaries)
         is_public_route = is_route and not any(
-            b.route_path == entry_point and b.is_authenticated for b in self.intelligence.auth_boundaries
+            b.route_path == entry_point and b.is_authenticated
+            for b in self.intelligence.auth_boundaries
         )
         if is_public_route:
             reachability_score = 30
@@ -747,20 +857,27 @@ class InvestigationOrchestrator:
 
         # Uncertainty penalty (0 to -15)
         unresolved_steps = [
-            step for step in call_chain
+            step
+            for step in call_chain
             if any(u.file_path in step for u in self.intelligence.unresolved_calls)
         ]
         if unresolved_steps:
             uncertainty_penalty = -15
-            uncertainty_desc = f"Path traverses unresolved dynamic dispatch ({len(unresolved_steps)} site(s))"
+            uncertainty_desc = (
+                f"Path traverses unresolved dynamic dispatch ({len(unresolved_steps)} site(s))"
+            )
         elif candidate.counterevidence:
             uncertainty_penalty = -5
-            uncertainty_desc = f"{len(candidate.counterevidence)} mitigating counterevidence factor(s) noted"
+            uncertainty_desc = (
+                f"{len(candidate.counterevidence)} mitigating counterevidence factor(s) noted"
+            )
         else:
             uncertainty_penalty = 0
             uncertainty_desc = "No dynamic dispatch or mitigating factors observed"
 
-        total_score = max(5, min(100, impact_score + reachability_score + control_score + uncertainty_penalty))
+        total_score = max(
+            5, min(100, impact_score + reachability_score + control_score + uncertainty_penalty)
+        )
 
         candidate.metadata["priority_score"] = total_score
         candidate.metadata["priority_breakdown"] = {
@@ -787,15 +904,27 @@ class InvestigationOrchestrator:
             f"1. Entry: Attacker transmits crafted payload to entry point '{entry_point}'"
         ]
         if len(call_chain) > 1:
-            steps.append(f"2. Dispatch: Request traverses internal call chain ({' -> '.join(call_chain)})")
-        steps.append(f"3. Execution: Payload reaches dangerous operation at {finding.file_path}:{finding.start_line}")
-        steps.append(f"4. Impact: {finding.impact or 'Unauthorized system manipulation or data compromise'}")
+            steps.append(
+                f"2. Dispatch: Request traverses internal call chain ({' -> '.join(call_chain)})"
+            )
+        steps.append(
+            f"3. Execution: Payload reaches dangerous operation at {finding.file_path}:{finding.start_line}"
+        )
+        steps.append(
+            f"4. Impact: {finding.impact or 'Unauthorized system manipulation or data compromise'}"
+        )
 
         if finding.structured_attack_chain is None:
             achain_steps = [
                 AttackChainStep(
                     step_number=1,
-                    location=SourceLocation(file_path=finding.file_path, start_line=finding.start_line, end_line=finding.end_line, symbol=entry_point, role="entry_point"),
+                    location=SourceLocation(
+                        file_path=finding.file_path,
+                        start_line=finding.start_line,
+                        end_line=finding.end_line,
+                        symbol=entry_point,
+                        role="entry_point",
+                    ),
                     operation_type="entry_point",
                     description=f"Attacker transmits payload to '{entry_point}'",
                     actor_capability="unauthenticated_attacker",
@@ -805,7 +934,12 @@ class InvestigationOrchestrator:
                 achain_steps.append(
                     AttackChainStep(
                         step_number=2,
-                        location=SourceLocation(file_path=finding.file_path, start_line=finding.start_line, end_line=finding.end_line, role="dispatch"),
+                        location=SourceLocation(
+                            file_path=finding.file_path,
+                            start_line=finding.start_line,
+                            end_line=finding.end_line,
+                            role="dispatch",
+                        ),
                         operation_type="dispatch",
                         description=f"Internal call traversal: {' -> '.join(call_chain)}",
                         actor_capability="unauthenticated_attacker",
@@ -814,7 +948,12 @@ class InvestigationOrchestrator:
             achain_steps.append(
                 AttackChainStep(
                     step_number=len(achain_steps) + 1,
-                    location=SourceLocation(file_path=finding.file_path, start_line=finding.start_line, end_line=finding.end_line, role="sink"),
+                    location=SourceLocation(
+                        file_path=finding.file_path,
+                        start_line=finding.start_line,
+                        end_line=finding.end_line,
+                        role="sink",
+                    ),
                     operation_type="sensitive_sink",
                     description=f"Payload reaches dangerous operation at {finding.file_path}:{finding.start_line}",
                     actor_capability="unauthenticated_attacker",
@@ -844,10 +983,19 @@ class InvestigationOrchestrator:
         except Exception:
             return False
 
-        scope_lines = lines[start_line: start_line + 15]
+        scope_lines = lines[start_line : start_line + 15]
         for line in scope_lines:
             line_clean = line.strip().lower()
-            if any(k in line_clean for k in ["abort(401)", "abort(403)", "session.get('user", "current_user.is_authenticated", "has_permission("]):
+            if any(
+                k in line_clean
+                for k in [
+                    "abort(401)",
+                    "abort(403)",
+                    "session.get('user",
+                    "current_user.is_authenticated",
+                    "has_permission(",
+                ]
+            ):
                 return True
         return False
 
@@ -865,7 +1013,7 @@ class InvestigationOrchestrator:
         except Exception:
             return True, 0
 
-        fn_lines = lines[start_line - 1: end_line]
+        fn_lines = lines[start_line - 1 : end_line]
         query_line = 0
         has_ownership = False
 
@@ -873,15 +1021,28 @@ class InvestigationOrchestrator:
             line_num = start_line + idx
             line_lower = line.lower()
 
-            if any(k in line_lower for k in [
-                "current_user", "session[", "session.get", "session_uid",
-                "owner_id =", "owner_id ==", "user_id =", "user_id ==",
-                "created_by =", "created_by ==", "owner =", "owner =="
-            ]):
+            if any(
+                k in line_lower
+                for k in [
+                    "current_user",
+                    "session[",
+                    "session.get",
+                    "session_uid",
+                    "owner_id =",
+                    "owner_id ==",
+                    "user_id =",
+                    "user_id ==",
+                    "created_by =",
+                    "created_by ==",
+                    "owner =",
+                    "owner ==",
+                ]
+            ):
                 has_ownership = True
 
             if any(p in line for p in id_params) and any(
-                q in line_lower for q in ["cursor.execute", ".get(", ".filter(", "select * from", "query."]
+                q in line_lower
+                for q in ["cursor.execute", ".get(", ".filter(", "select * from", "query."]
             ):
                 query_line = line_num
 
@@ -900,7 +1061,7 @@ class InvestigationOrchestrator:
         except Exception:
             return False, 0
 
-        fn_lines = lines[start_line - 1: end_line]
+        fn_lines = lines[start_line - 1 : end_line]
         query_line = 0
         has_tenant_filter = False
 
@@ -908,15 +1069,39 @@ class InvestigationOrchestrator:
             line_num = start_line + idx
             line_lower = line.lower()
 
-            if any(k in line_lower for k in [
-                "tenant_id =", "tenant_id ==", "org_id =", "org_id ==",
-                "tenant_id:", "org_id:", "current_tenant", "session_tenant",
-                "@tenant_required", "tenant_filter", "owner_id =", "owner_id ==",
-                "user_id =", "user_id ==", "session_uid"
-            ]):
+            if any(
+                k in line_lower
+                for k in [
+                    "tenant_id =",
+                    "tenant_id ==",
+                    "org_id =",
+                    "org_id ==",
+                    "tenant_id:",
+                    "org_id:",
+                    "current_tenant",
+                    "session_tenant",
+                    "@tenant_required",
+                    "tenant_filter",
+                    "owner_id =",
+                    "owner_id ==",
+                    "user_id =",
+                    "user_id ==",
+                    "session_uid",
+                ]
+            ):
                 has_tenant_filter = True
 
-            if any(q in line_lower for q in ["cursor.execute", ".filter(", "select * from", "from documents", "from invoices", "from accounts"]):
+            if any(
+                q in line_lower
+                for q in [
+                    "cursor.execute",
+                    ".filter(",
+                    "select * from",
+                    "from documents",
+                    "from invoices",
+                    "from accounts",
+                ]
+            ):
                 query_line = line_num
 
         return (not has_tenant_filter and query_line > 0), query_line
@@ -934,7 +1119,7 @@ class InvestigationOrchestrator:
         except Exception:
             return False, 0
 
-        fn_lines = lines[start_line - 1: end_line]
+        fn_lines = lines[start_line - 1 : end_line]
         sink_line = 0
         has_auth_or_safe = False
 
@@ -942,13 +1127,23 @@ class InvestigationOrchestrator:
             line_num = start_line + idx
             line_lower = line.lower()
 
-            if any(k in line_lower for k in [
-                "owner_id", "session_uid", "current_user", "resolve_safe_path",
-                "secure_filename", "os.path.basename", "is_authorized"
-            ]):
+            if any(
+                k in line_lower
+                for k in [
+                    "owner_id",
+                    "session_uid",
+                    "current_user",
+                    "resolve_safe_path",
+                    "secure_filename",
+                    "os.path.basename",
+                    "is_authorized",
+                ]
+            ):
                 has_auth_or_safe = True
 
-            if any(s in line_lower for s in ["send_file(", "send_from_directory(", "download_file("]):
+            if any(
+                s in line_lower for s in ["send_file(", "send_from_directory(", "download_file("]
+            ):
                 sink_line = line_num
 
         return (not has_auth_or_safe and sink_line > 0), sink_line
@@ -966,7 +1161,7 @@ class InvestigationOrchestrator:
         except Exception:
             return False, 0
 
-        fn_lines = lines[start_line - 1: end_line]
+        fn_lines = lines[start_line - 1 : end_line]
         exposure_line = 0
 
         for idx, line in enumerate(fn_lines):
@@ -988,7 +1183,9 @@ class InvestigationOrchestrator:
                     '"private_key":',
                     "'private_key':",
                 ]
-            ) and not any(e in line_lower for e in ["exclude", "redact", "mask", "hashlib", "verify"]):
+            ) and not any(
+                e in line_lower for e in ["exclude", "redact", "mask", "hashlib", "verify"]
+            ):
                 exposure_line = line_num
                 break
 
@@ -1013,7 +1210,7 @@ class InvestigationOrchestrator:
         except Exception:
             return False, 0
 
-        fn_lines = lines[start_line - 1: end_line]
+        fn_lines = lines[start_line - 1 : end_line]
         transition_line = 0
         has_invariant_check = False
 
@@ -1021,17 +1218,30 @@ class InvestigationOrchestrator:
             line_num = start_line + idx
             line_clean = line.strip()
 
-            if any(k in line_clean for k in [
-                "if order.status", "if payment.status", "if status ==",
-                "payment.verify", "is_paid", "verify_signature"
-            ]):
+            if any(
+                k in line_clean
+                for k in [
+                    "if order.status",
+                    "if payment.status",
+                    "if status ==",
+                    "payment.verify",
+                    "is_paid",
+                    "verify_signature",
+                ]
+            ):
                 has_invariant_check = True
 
-            if any(t in line_clean for t in [
-                '.status = "FULFILLED"', ".status = 'FULFILLED'",
-                '.status = "PAID"', ".status = 'PAID'",
-                '.status = "COMPLETED"', ".status = 'COMPLETED'"
-            ]):
+            if any(
+                t in line_clean
+                for t in [
+                    '.status = "FULFILLED"',
+                    ".status = 'FULFILLED'",
+                    '.status = "PAID"',
+                    ".status = 'PAID'",
+                    '.status = "COMPLETED"',
+                    ".status = 'COMPLETED'",
+                ]
+            ):
                 transition_line = line_num
 
         return (not has_invariant_check and transition_line > 0), transition_line
@@ -1043,6 +1253,6 @@ class InvestigationOrchestrator:
             lines = full_path.read_text(encoding="utf-8", errors="replace").splitlines()
             s = max(1, start_line)
             e = min(len(lines), end_line)
-            return "\n".join(lines[s - 1: e])
+            return "\n".join(lines[s - 1 : e])
         except Exception:
             return ""

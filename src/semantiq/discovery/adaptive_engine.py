@@ -170,7 +170,9 @@ class AutonomousDiscoveryEngine:
             "repository_name": self.repository_root.name,
             "total_python_files": len(py_files),
             "detected_frameworks": sorted(frameworks),
-            "architecture_type": "Web Application" if frameworks else ("CLI/Library" if is_library else "General Python"),
+            "architecture_type": "Web Application"
+            if frameworks
+            else ("CLI/Library" if is_library else "General Python"),
             "candidate_entrypoint_files": entry_points[:10],
         }
 
@@ -223,53 +225,88 @@ class AutonomousDiscoveryEngine:
                         call_name = node.func.attr
 
                     # Process execution sinks
-                    if call_name in {"system", "popen", "Popen", "call", "run", "spawn", "execute", "_call_process"}:
-                        process_sinks.append({
-                            "symbol": call_name,
-                            "file_path": rel_path,
-                            "line": node.lineno,
-                            "kind": "process_exec",
-                        })
+                    if call_name in {
+                        "system",
+                        "popen",
+                        "Popen",
+                        "call",
+                        "run",
+                        "spawn",
+                        "execute",
+                        "_call_process",
+                    }:
+                        process_sinks.append(
+                            {
+                                "symbol": call_name,
+                                "file_path": rel_path,
+                                "line": node.lineno,
+                                "kind": "process_exec",
+                            }
+                        )
 
                     # Code execution sinks
                     elif call_name in {"eval", "exec", "exec_module", "compile", "import_module"}:
-                        eval_sinks.append({
-                            "symbol": call_name,
-                            "file_path": rel_path,
-                            "line": node.lineno,
-                            "kind": "code_eval",
-                        })
+                        eval_sinks.append(
+                            {
+                                "symbol": call_name,
+                                "file_path": rel_path,
+                                "line": node.lineno,
+                                "kind": "code_eval",
+                            }
+                        )
 
                     # File and resource sinks
-                    elif call_name in {"extractall", "extract", "send_file", "send_from_directory", "copyfile", "copytree", "read_bytes"}:
-                        file_sinks.append({
-                            "symbol": call_name,
-                            "file_path": rel_path,
-                            "line": node.lineno,
-                            "kind": "file_resource",
-                        })
+                    elif call_name in {
+                        "extractall",
+                        "extract",
+                        "send_file",
+                        "send_from_directory",
+                        "copyfile",
+                        "copytree",
+                        "read_bytes",
+                    }:
+                        file_sinks.append(
+                            {
+                                "symbol": call_name,
+                                "file_path": rel_path,
+                                "line": node.lineno,
+                                "kind": "file_resource",
+                            }
+                        )
 
                     # Auth / session sinks
-                    elif call_name in {"id", "choice", "random"} and any(kw in rel_path.lower() for kw in ("session", "auth", "token", "store")):
-                        auth_sinks.append({
-                            "symbol": call_name,
-                            "file_path": rel_path,
-                            "line": node.lineno,
-                            "kind": "token_generation",
-                        })
+                    elif call_name in {"id", "choice", "random"} and any(
+                        kw in rel_path.lower() for kw in ("session", "auth", "token", "store")
+                    ):
+                        auth_sinks.append(
+                            {
+                                "symbol": call_name,
+                                "file_path": rel_path,
+                                "line": node.lineno,
+                                "kind": "token_generation",
+                            }
+                        )
 
                     # Async and worker sinks
-                    elif call_name in {"start", "submit", "put", "spawn"} and any(kw in rel_path.lower() for kw in ("queue", "worker", "task", "thread", "async")):
-                        async_sinks.append({
-                            "symbol": call_name,
-                            "file_path": rel_path,
-                            "line": node.lineno,
-                            "kind": "async_dispatch",
-                        })
+                    elif call_name in {"start", "submit", "put", "spawn"} and any(
+                        kw in rel_path.lower()
+                        for kw in ("queue", "worker", "task", "thread", "async")
+                    ):
+                        async_sinks.append(
+                            {
+                                "symbol": call_name,
+                                "file_path": rel_path,
+                                "line": node.lineno,
+                                "kind": "async_dispatch",
+                            }
+                        )
 
         return {
             "total_routes": len(routes),
-            "routes": [{"id": r.id, "label": r.label, "file": r.file_path, "line": r.start_line} for r in routes],
+            "routes": [
+                {"id": r.id, "label": r.label, "file": r.file_path, "line": r.start_line}
+                for r in routes
+            ],
             "total_functions": len(functions),
             "total_classes": len(classes),
             "sinks": {
@@ -298,7 +335,11 @@ class AutonomousDiscoveryEngine:
         # ---------------------------------------------------------------------
         # Class 1: Authorization & Access Control
         # ---------------------------------------------------------------------
-        unauth_routes = [r for r in routes if not any(kw in (r.get("id") or "").lower() for kw in ("login", "auth", "token"))]
+        unauth_routes = [
+            r
+            for r in routes
+            if not any(kw in (r.get("id") or "").lower() for kw in ("login", "auth", "token"))
+        ]
         for r in unauth_routes[:3]:
             hyp = SecurityHypothesis(
                 hypothesis_id="",
@@ -458,7 +499,11 @@ class AutonomousDiscoveryEngine:
 
     def investigate_hypothesis(self, hypothesis: SecurityHypothesis) -> SecurityHypothesis:
         """Execute focused multi-step investigation on a single hypothesis."""
-        logger.info("Starting investigation on hypothesis: %s (%s)", hypothesis.title, hypothesis.hypothesis_id)
+        logger.info(
+            "Starting investigation on hypothesis: %s (%s)",
+            hypothesis.title,
+            hypothesis.hypothesis_id,
+        )
 
         # Transition FORMED -> EVIDENCE_SEEKING
         self.hypothesis_manager.transition_state(
@@ -538,7 +583,14 @@ class AutonomousDiscoveryEngine:
             start_line=sink_line,
             end_line=min(len(lines), sink_line + 5),
             code_evidence=[sink_evidence],
-            locations=[SourceLocation(file_path=hypothesis.file_path, start_line=sink_line, end_line=sink_line + 5, role="sink")],
+            locations=[
+                SourceLocation(
+                    file_path=hypothesis.file_path,
+                    start_line=sink_line,
+                    end_line=sink_line + 5,
+                    role="sink",
+                )
+            ],
             counterevidence=hypothesis.counterevidence,
         )
 
@@ -558,7 +610,10 @@ class AutonomousDiscoveryEngine:
         # Determine final disposition
         if adv_eval.verdict == AdversarialVerdict.PROTECTED or adv_eval.contradicts_finding:
             # Defended by effective sanitizer
-            self.hypothesis_manager.add_counterevidence(hypothesis.hypothesis_id, adv_eval.rationale or "Mandatory guard neutralizes exploit.")
+            self.hypothesis_manager.add_counterevidence(
+                hypothesis.hypothesis_id,
+                adv_eval.rationale or "Mandatory guard neutralizes exploit.",
+            )
             self.hypothesis_manager.transition_state(
                 hypothesis.hypothesis_id,
                 HypothesisStatus.REFUTED_BY_DEFENSE,
@@ -566,7 +621,10 @@ class AutonomousDiscoveryEngine:
             )
         else:
             # Check if there are critical missing proofs or dynamic dispatches
-            if "unresolved" in adv_eval.rationale.lower() or "dynamic" in adv_eval.rationale.lower():
+            if (
+                "unresolved" in adv_eval.rationale.lower()
+                or "dynamic" in adv_eval.rationale.lower()
+            ):
                 gap = ProofGap(
                     description=f"Dynamic dispatch or unverified prerequisite on path to {hypothesis.target_symbol}",
                     target_symbol=hypothesis.target_symbol,
@@ -599,14 +657,20 @@ class AutonomousDiscoveryEngine:
         confidence = ConfidenceLevel.HIGH
 
         if hypothesis.vuln_class == DeepVulnerabilityClass.INJECTION_EXECUTION:
-            severity = SeverityLevel.CRITICAL if "unauthenticated" in hypothesis.exploit_mechanism else SeverityLevel.HIGH
+            severity = (
+                SeverityLevel.CRITICAL
+                if "unauthenticated" in hypothesis.exploit_mechanism
+                else SeverityLevel.HIGH
+            )
         elif hypothesis.vuln_class in (
             DeepVulnerabilityClass.FILE_RESOURCE_HANDLING,
             DeepVulnerabilityClass.AUTHENTICATION_SESSION_SECURITY,
         ):
             severity = SeverityLevel.HIGH
         elif hypothesis.vuln_class == DeepVulnerabilityClass.AUTHORIZATION_ACCESS_CONTROL:
-            severity = SeverityLevel.MEDIUM if "read" in hypothesis.title.lower() else SeverityLevel.HIGH
+            severity = (
+                SeverityLevel.MEDIUM if "read" in hypothesis.title.lower() else SeverityLevel.HIGH
+            )
         else:
             severity = SeverityLevel.MEDIUM
 
@@ -617,7 +681,9 @@ class AutonomousDiscoveryEngine:
 
         # Synthesize propagation and entrypoint evidence if not present
         evidence_items = list(hypothesis.supporting_evidence)
-        has_entry = any(getattr(e, "role", "") == CodeEvidenceRole.ENTRYPOINT for e in evidence_items)
+        has_entry = any(
+            getattr(e, "role", "") == CodeEvidenceRole.ENTRYPOINT for e in evidence_items
+        )
         if not has_entry:
             evidence_items.append(
                 CodeEvidence(
@@ -633,7 +699,9 @@ class AutonomousDiscoveryEngine:
                 )
             )
 
-        finding_id = f"semantiq_{hashlib.sha256(hypothesis.hypothesis_id.encode()).hexdigest()[:16]}"
+        finding_id = (
+            f"semantiq_{hashlib.sha256(hypothesis.hypothesis_id.encode()).hexdigest()[:16]}"
+        )
         occurrence_id = f"occ_{hashlib.sha256(f'{finding_id}:{hypothesis.file_path}:{sink_line}'.encode()).hexdigest()[:16]}"
 
         finding = Finding(
@@ -693,8 +761,47 @@ class AutonomousDiscoveryEngine:
             py_files = [
                 str(p.relative_to(self.repository_root)).replace("\\", "/")
                 for p in self.repository_root.rglob("*.py")
-                if not any(part.startswith(".") or part in ("tests", "venv", ".venv", "build", "dist") for part in p.parts)
+                if not any(
+                    part.startswith(".") or part in ("tests", "venv", ".venv", "build", "dist")
+                    for part in p.parts
+                )
             ]
+
+        if not py_files:
+            return AutonomousDiscoveryOutput(
+                scan_id=scan_id,
+                repository_path=str(self.repository_root),
+                target_revision=self.source_revision,
+                reconnaissance={
+                    "repository_name": self.repository_root.name,
+                    "total_python_files": 0,
+                },
+                threat_model={"detected_frameworks": [], "trust_boundaries": []},
+                hypotheses=[],
+                findings=[],
+                rejected_findings=[],
+                proof_gaps=[],
+                action_log=[],
+                coverage_metrics={
+                    "total_python_files": 0,
+                    "total_routes_discovered": 0,
+                    "routes_audited": 0,
+                    "route_coverage_percentage": 100.0,
+                    "total_sinks_discovered": 0,
+                    "hypotheses_evaluated": 0,
+                },
+                resource_metrics={
+                    "investigation_turns_executed": 0,
+                    "elapsed_seconds": round(time.perf_counter() - t_start, 2),
+                    "input_tokens": 0,
+                    "cached_input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                },
+                stopping_reason="no_python_files_found",
+                completed_at=datetime.now(timezone.utc).isoformat(),
+            )
 
         # 1. Reconnaissance
         recon = self.perform_reconnaissance(py_files)
@@ -771,8 +878,12 @@ class AutonomousDiscoveryEngine:
         # 10. Coverage & Resource Metrics
         elapsed_total = round(time.perf_counter() - t_start, 2)
         total_routes = attack_surface.get("total_routes", 0)
-        audited_routes = len({h.entry_point for h in self.hypothesis_manager.hypotheses.values() if h.entry_point})
-        route_coverage = round((audited_routes / max(1, total_routes)) * 100.0, 1) if total_routes > 0 else 100.0
+        audited_routes = len(
+            {h.entry_point for h in self.hypothesis_manager.hypotheses.values() if h.entry_point}
+        )
+        route_coverage = (
+            round((audited_routes / max(1, total_routes)) * 100.0, 1) if total_routes > 0 else 100.0
+        )
 
         all_gaps: list[ProofGap] = []
         for h in self.hypothesis_manager.hypotheses.values():
@@ -810,7 +921,10 @@ class AutonomousDiscoveryEngine:
             reconnaissance=recon,
             threat_model={
                 "detected_frameworks": recon.get("detected_frameworks", []),
-                "trust_boundaries": ["unauthenticated_network -> local_execution", "archive_input -> file_system"],
+                "trust_boundaries": [
+                    "unauthenticated_network -> local_execution",
+                    "archive_input -> file_system",
+                ],
             },
             hypotheses=[h.model_dump() for h in self.hypothesis_manager.hypotheses.values()],
             findings=confirmed_findings,

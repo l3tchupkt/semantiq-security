@@ -81,10 +81,22 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
             "type": "object",
             "properties": {
                 "file_path": {"type": "string", "description": "Relative repository file path"},
-                "symbol": {"type": "string", "description": "Optional function, method, or class name to auto-locate"},
-                "start_line": {"type": "integer", "description": "1-based starting line number (optional if symbol provided)"},
-                "end_line": {"type": "integer", "description": "1-based ending line number (optional if symbol provided)"},
-                "max_lines": {"type": "integer", "description": "Maximum lines to retrieve (default: 50, max: 100)"},
+                "symbol": {
+                    "type": "string",
+                    "description": "Optional function, method, or class name to auto-locate",
+                },
+                "start_line": {
+                    "type": "integer",
+                    "description": "1-based starting line number (optional if symbol provided)",
+                },
+                "end_line": {
+                    "type": "integer",
+                    "description": "1-based ending line number (optional if symbol provided)",
+                },
+                "max_lines": {
+                    "type": "integer",
+                    "description": "Maximum lines to retrieve (default: 50, max: 100)",
+                },
             },
             "required": ["file_path"],
             "additionalProperties": False,
@@ -129,7 +141,10 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "source_symbol": {"type": "string", "description": "Originating source symbol or parameter"},
+                "source_symbol": {
+                    "type": "string",
+                    "description": "Originating source symbol or parameter",
+                },
                 "sink_symbol": {"type": "string", "description": "Target sink symbol or operation"},
             },
             "required": ["source_symbol", "sink_symbol"],
@@ -145,7 +160,10 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "route_path": {"type": "string", "description": "HTTP route path (e.g. '/api/v1/...')"},
+                "route_path": {
+                    "type": "string",
+                    "description": "HTTP route path (e.g. '/api/v1/...')",
+                },
             },
             "required": ["route_path"],
             "additionalProperties": False,
@@ -160,7 +178,10 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "target": {"type": "string", "description": "Route path or function symbol to inspect"},
+                "target": {
+                    "type": "string",
+                    "description": "Route path or function symbol to inspect",
+                },
             },
             "required": ["target"],
             "additionalProperties": False,
@@ -175,7 +196,10 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "sink_symbol": {"type": "string", "description": "Name or kind of sensitive sink operation"},
+                "sink_symbol": {
+                    "type": "string",
+                    "description": "Name or kind of sensitive sink operation",
+                },
             },
             "required": ["sink_symbol"],
             "additionalProperties": False,
@@ -202,11 +226,23 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "hypothesis_id": {"type": "string", "description": "Unique identifier (e.g. 'hyp_auth_01')"},
-                "target_symbol": {"type": "string", "description": "Vulnerable function, method, or sink symbol"},
+                "hypothesis_id": {
+                    "type": "string",
+                    "description": "Unique identifier (e.g. 'hyp_auth_01')",
+                },
+                "target_symbol": {
+                    "type": "string",
+                    "description": "Vulnerable function, method, or sink symbol",
+                },
                 "entry_point": {"type": "string", "description": "Entry point path or trigger"},
-                "sensitive_operation": {"type": "string", "description": "Sensitive operation impacted"},
-                "statement": {"type": "string", "description": "Concise statement of the security hypothesis"},
+                "sensitive_operation": {
+                    "type": "string",
+                    "description": "Sensitive operation impacted",
+                },
+                "statement": {
+                    "type": "string",
+                    "description": "Concise statement of the security hypothesis",
+                },
                 "preconditions": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -218,7 +254,13 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
                     "description": "Initial observed evidence facts",
                 },
             },
-            "required": ["hypothesis_id", "target_symbol", "entry_point", "sensitive_operation", "statement"],
+            "required": [
+                "hypothesis_id",
+                "target_symbol",
+                "entry_point",
+                "sensitive_operation",
+                "statement",
+            ],
             "additionalProperties": False,
         },
     ),
@@ -242,7 +284,10 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
                     "enum": ["open", "confirmed", "mitigated", "false_positive"],
                     "description": "Updated disposition of the hypothesis",
                 },
-                "explanation": {"type": "string", "description": "Rationale for disposition update"},
+                "explanation": {
+                    "type": "string",
+                    "description": "Rationale for disposition update",
+                },
             },
             "required": ["hypothesis_id", "disposition"],
             "additionalProperties": False,
@@ -459,11 +504,26 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "description": {"type": "string", "description": "Specific unknown fact or missing invariant"},
-                "rationale": {"type": "string", "description": "Why this unknown matters to the security claim"},
-                "target_symbol": {"type": "string", "description": "Symbol or component with unknown behavior"},
-                "resolution_criteria": {"type": "string", "description": "Concrete code or runtime proof required to resolve this gap"},
-                "finding_id": {"type": "string", "description": "Optional related finding ID or candidate identifier"},
+                "description": {
+                    "type": "string",
+                    "description": "Specific unknown fact or missing invariant",
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": "Why this unknown matters to the security claim",
+                },
+                "target_symbol": {
+                    "type": "string",
+                    "description": "Symbol or component with unknown behavior",
+                },
+                "resolution_criteria": {
+                    "type": "string",
+                    "description": "Concrete code or runtime proof required to resolve this gap",
+                },
+                "finding_id": {
+                    "type": "string",
+                    "description": "Optional related finding ID or candidate identifier",
+                },
                 "status": {
                     "type": "string",
                     "enum": ["open", "resolved", "blocked", "not_applicable"],
@@ -487,7 +547,10 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
                     "enum": ["resolved", "blocked", "not_applicable"],
                     "description": "New status for the proof gap",
                 },
-                "resolution_notes": {"type": "string", "description": "Explanation of how the gap was resolved or why it is blocked"},
+                "resolution_notes": {
+                    "type": "string",
+                    "description": "Explanation of how the gap was resolved or why it is blocked",
+                },
                 "supporting_evidence": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -507,7 +570,10 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "symbol": {"type": "string", "description": "Symbol name or qualified path (e.g. 'Server', 'ait.gui.server.Server.process')"},
+                "symbol": {
+                    "type": "string",
+                    "description": "Symbol name or qualified path (e.g. 'Server', 'ait.gui.server.Server.process')",
+                },
             },
             "required": ["symbol"],
             "additionalProperties": False,
@@ -521,9 +587,18 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "caller_symbol": {"type": "string", "description": "Calling function or method symbol"},
-                "callee_symbol": {"type": "string", "description": "Target callee function or method symbol"},
-                "argument": {"type": "string", "description": "Optional argument name or index (0-based) to trace"},
+                "caller_symbol": {
+                    "type": "string",
+                    "description": "Calling function or method symbol",
+                },
+                "callee_symbol": {
+                    "type": "string",
+                    "description": "Target callee function or method symbol",
+                },
+                "argument": {
+                    "type": "string",
+                    "description": "Optional argument name or index (0-based) to trace",
+                },
             },
             "required": ["caller_symbol", "callee_symbol"],
             "additionalProperties": False,
@@ -537,8 +612,14 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "callee_symbol": {"type": "string", "description": "Callee function or method symbol"},
-                "caller_symbol": {"type": "string", "description": "Optional caller function or method symbol filter"},
+                "callee_symbol": {
+                    "type": "string",
+                    "description": "Callee function or method symbol",
+                },
+                "caller_symbol": {
+                    "type": "string",
+                    "description": "Optional caller function or method symbol filter",
+                },
             },
             "required": ["callee_symbol"],
             "additionalProperties": False,
@@ -555,10 +636,20 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
             "properties": {
                 "sink_kind": {
                     "type": "string",
-                    "enum": ["query", "process_exec", "file_operation", "external_request", "sensitive_sink", "all"],
+                    "enum": [
+                        "query",
+                        "process_exec",
+                        "file_operation",
+                        "external_request",
+                        "sensitive_sink",
+                        "all",
+                    ],
                     "description": "Optional sink category filter",
                 },
-                "route_filter": {"type": "string", "description": "Optional route path pattern to filter"},
+                "route_filter": {
+                    "type": "string",
+                    "description": "Optional route path pattern to filter",
+                },
             },
             "additionalProperties": False,
         },
@@ -572,7 +663,10 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "target": {"type": "string", "description": "Route path or function symbol to inspect"},
+                "target": {
+                    "type": "string",
+                    "description": "Route path or function symbol to inspect",
+                },
             },
             "required": ["target"],
             "additionalProperties": False,
@@ -600,8 +694,14 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "source_entry": {"type": "string", "description": "Originating route or entry handler"},
-                "sink": {"type": "string", "description": "Target sensitive sink expression, ID, or kind"},
+                "source_entry": {
+                    "type": "string",
+                    "description": "Originating route or entry handler",
+                },
+                "sink": {
+                    "type": "string",
+                    "description": "Target sensitive sink expression, ID, or kind",
+                },
             },
             "required": ["source_entry", "sink"],
             "additionalProperties": False,
@@ -616,25 +716,43 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         parameters={
             "type": "object",
             "properties": {
-                "summary": {"type": "string", "description": "High-level summary of investigation results"},
+                "summary": {
+                    "type": "string",
+                    "description": "High-level summary of investigation results",
+                },
                 "findings": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
                             "title": {"type": "string", "description": "Clear vulnerability title"},
-                            "rule_id": {"type": "string", "description": "Rule identifier or 'AI-DISCOVERY-...'"},
-                            "file_path": {"type": "string", "description": "File path where flaw exists"},
-                            "start_line": {"type": "integer", "description": "Starting line number"},
+                            "rule_id": {
+                                "type": "string",
+                                "description": "Rule identifier or 'AI-DISCOVERY-...'",
+                            },
+                            "file_path": {
+                                "type": "string",
+                                "description": "File path where flaw exists",
+                            },
+                            "start_line": {
+                                "type": "integer",
+                                "description": "Starting line number",
+                            },
                             "end_line": {"type": "integer", "description": "Ending line number"},
-                            "summary": {"type": "string", "description": "Detailed explanation of flaw and impact"},
+                            "summary": {
+                                "type": "string",
+                                "description": "Detailed explanation of flaw and impact",
+                            },
                             "category": {"type": "string", "description": "Vulnerability category"},
                             "severity": {
                                 "type": "string",
                                 "enum": ["critical", "high", "medium", "low", "informational"],
                             },
                             "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-                            "entry_point": {"type": "string", "description": "Attacker entry point"},
+                            "entry_point": {
+                                "type": "string",
+                                "description": "Attacker entry point",
+                            },
                             "prerequisites": {"type": "array", "items": {"type": "string"}},
                             "supporting_evidence": {"type": "array", "items": {"type": "string"}},
                             "counterevidence": {"type": "array", "items": {"type": "string"}},
@@ -655,7 +773,15 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
                             },
                             "lifecycle_state": {
                                 "type": "string",
-                                "enum": ["candidate", "under_investigation", "confirmed", "partially_confirmed", "rejected", "duplicate", "deferred"],
+                                "enum": [
+                                    "candidate",
+                                    "under_investigation",
+                                    "confirmed",
+                                    "partially_confirmed",
+                                    "rejected",
+                                    "duplicate",
+                                    "deferred",
+                                ],
                             },
                             "attack_chain_steps": {
                                 "type": "array",
@@ -671,7 +797,15 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
                                 "description": "True if genuinely exploitable in production; False if mitigated, theoretical design concern, or test-only stub",
                             },
                         },
-                        "required": ["title", "file_path", "start_line", "end_line", "summary", "category", "severity"],
+                        "required": [
+                            "title",
+                            "file_path",
+                            "start_line",
+                            "end_line",
+                            "summary",
+                            "category",
+                            "severity",
+                        ],
                     },
                     "description": "List of discovered vulnerability findings",
                 },
@@ -707,9 +841,7 @@ class InvestigationToolExecutor:
                 with contextlib.suppress(Exception):
                     h_obj = InvestigationHypothesis.model_validate(h_dict)
                     if h_obj.disposition == "confirmed":
-                        h_obj.uncertainty = (
-                            "Loaded from prior persistent session; must be re-grounded against current source."
-                        )
+                        h_obj.uncertainty = "Loaded from prior persistent session; must be re-grounded against current source."
                     self.hypotheses[h_obj.hypothesis_id] = h_obj
         self.findings: list[Finding] = []
         self.invalid_citations: list[dict[str, Any]] = []
@@ -739,8 +871,10 @@ class InvestigationToolExecutor:
     def _tool_get_repository_overview(self, _args: dict[str, Any]) -> dict[str, Any]:
         routes = self.graph.find_nodes(kind=NodeKind.ROUTE)
         sensitive_sinks = [
-            n for n in self.graph.nodes.values()
-            if n.kind in (
+            n
+            for n in self.graph.nodes.values()
+            if n.kind
+            in (
                 NodeKind.SENSITIVE_SINK,
                 NodeKind.QUERY,
                 NodeKind.PROCESS_EXEC,
@@ -753,9 +887,14 @@ class InvestigationToolExecutor:
         repo_files = sorted([f.replace("\\", "/") for f in self.intelligence.file_metadata])
         if not repo_files:
             for p in self.repository_root.rglob("*.py"):
-                if p.is_file() and not any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv") for part in p.parts):
+                if p.is_file() and not any(
+                    part.startswith(".") or part in ("__pycache__", "node_modules", "venv")
+                    for part in p.parts
+                ):
                     with contextlib.suppress(Exception):
-                        repo_files.append(str(p.relative_to(self.repository_root)).replace("\\", "/"))
+                        repo_files.append(
+                            str(p.relative_to(self.repository_root)).replace("\\", "/")
+                        )
             repo_files.sort()
 
         entry_points: list[dict[str, Any]] = []
@@ -763,16 +902,22 @@ class InvestigationToolExecutor:
             norm_f = fpath.replace("\\", "/")
             for s in syms:
                 if s.kind in ("function", "method", "class") and (
-                    any(k in norm_f for k in ("api", "router", "route", "service", "handler", "worker")) or s.decorators
+                    any(
+                        k in norm_f
+                        for k in ("api", "router", "route", "service", "handler", "worker")
+                    )
+                    or s.decorators
                 ):
-                    entry_points.append({
-                        "name": s.name,
-                        "qualified_name": s.qualified_name,
-                        "kind": s.kind,
-                        "file_path": norm_f,
-                        "line": s.start_line,
-                        "decorators": s.decorators,
-                    })
+                    entry_points.append(
+                        {
+                            "name": s.name,
+                            "qualified_name": s.qualified_name,
+                            "kind": s.kind,
+                            "file_path": norm_f,
+                            "line": s.start_line,
+                            "decorators": s.decorators,
+                        }
+                    )
 
         return {
             "status": "success",
@@ -811,9 +956,14 @@ class InvestigationToolExecutor:
         repo_files = sorted([f.replace("\\", "/") for f in self.intelligence.file_metadata])
         if not repo_files:
             for p in self.repository_root.rglob("*"):
-                if p.is_file() and not any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv") for part in p.parts):
+                if p.is_file() and not any(
+                    part.startswith(".") or part in ("__pycache__", "node_modules", "venv")
+                    for part in p.parts
+                ):
                     with contextlib.suppress(Exception):
-                        repo_files.append(str(p.relative_to(self.repository_root)).replace("\\", "/"))
+                        repo_files.append(
+                            str(p.relative_to(self.repository_root)).replace("\\", "/")
+                        )
             repo_files.sort()
 
         if target_dir:
@@ -833,7 +983,7 @@ class InvestigationToolExecutor:
         file_path = raw_file_path.replace("\\", "/")
         repo_str = str(self.repository_root).replace("\\", "/")
         if file_path.startswith(repo_str):
-            file_path = file_path[len(repo_str):].lstrip("/\\")
+            file_path = file_path[len(repo_str) :].lstrip("/\\")
         if file_path.startswith("./"):
             file_path = file_path[2:]
         file_path = file_path.lstrip("/")
@@ -844,12 +994,16 @@ class InvestigationToolExecutor:
         end_line_arg = args.get("end_line")
 
         # If symbol provided without explicit start_line, auto-locate symbol lines
-        if symbol and (start_line_arg is None or (int(start_line_arg) == 1 and end_line_arg is None)):
+        if symbol and (
+            start_line_arg is None or (int(start_line_arg) == 1 and end_line_arg is None)
+        ):
             resolved_start, resolved_end = None, None
             for fpath, syms in self.intelligence.symbols.items():
                 if not file_path or file_path in fpath:
                     for s in syms:
-                        if s.name.lower() == symbol.lower() or s.qualified_name.lower().endswith(symbol.lower()):
+                        if s.name.lower() == symbol.lower() or s.qualified_name.lower().endswith(
+                            symbol.lower()
+                        ):
                             file_path = fpath
                             resolved_start = s.start_line
                             resolved_end = s.end_line
@@ -881,7 +1035,10 @@ class InvestigationToolExecutor:
         try:
             full_path = resolve_safe_path(self.repository_root, file_path)
             if not full_path.is_file():
-                return {"status": "error", "error": f"File '{file_path}' does not exist in repository."}
+                return {
+                    "status": "error",
+                    "error": f"File '{file_path}' does not exist in repository.",
+                }
 
             content = full_path.read_text(encoding="utf-8", errors="replace")
             lines = content.splitlines()
@@ -913,7 +1070,7 @@ class InvestigationToolExecutor:
         scope_file = args.get("file_path", "").strip().replace("\\", "/")
         repo_str = str(self.repository_root).replace("\\", "/")
         if scope_file.startswith(repo_str):
-            scope_file = scope_file[len(repo_str):].lstrip("/\\")
+            scope_file = scope_file[len(repo_str) :].lstrip("/\\")
         if scope_file.startswith("./"):
             scope_file = scope_file[2:]
         scope_file = scope_file.lstrip("/")
@@ -931,18 +1088,28 @@ class InvestigationToolExecutor:
                 continue
             for s in sym_list:
                 match = False
-                if is_all_query or is_func_query and s.kind in ("function", "async_function", "method") or is_class_query and s.kind == "class" or query in s.name.lower() or query in s.qualified_name.lower():
+                if (
+                    is_all_query
+                    or is_func_query
+                    and s.kind in ("function", "async_function", "method")
+                    or is_class_query
+                    and s.kind == "class"
+                    or query in s.name.lower()
+                    or query in s.qualified_name.lower()
+                ):
                     match = True
 
                 if match:
-                    matches.append({
-                        "name": s.name,
-                        "qualified_name": s.qualified_name,
-                        "kind": s.kind,
-                        "file_path": norm_f,
-                        "start_line": s.start_line,
-                        "end_line": s.end_line,
-                    })
+                    matches.append(
+                        {
+                            "name": s.name,
+                            "qualified_name": s.qualified_name,
+                            "kind": s.kind,
+                            "file_path": norm_f,
+                            "start_line": s.start_line,
+                            "end_line": s.end_line,
+                        }
+                    )
 
         # 2. Search SPG nodes
         for node in self.graph.nodes.values():
@@ -950,20 +1117,30 @@ class InvestigationToolExecutor:
             if scope_file and node_fpath and scope_file not in node_fpath:
                 continue
             match = False
-            if is_all_query or is_func_query and node.kind in (NodeKind.FUNCTION, NodeKind.METHOD) or is_class_query and node.kind == NodeKind.CLASS or query in node.label.lower() or query in node.id.lower():
+            if (
+                is_all_query
+                or is_func_query
+                and node.kind in (NodeKind.FUNCTION, NodeKind.METHOD)
+                or is_class_query
+                and node.kind == NodeKind.CLASS
+                or query in node.label.lower()
+                or query in node.id.lower()
+            ):
                 match = True
 
             if match and not any(
                 m["file_path"] == node_fpath and m["start_line"] == node.start_line for m in matches
             ):
-                matches.append({
-                    "name": node.label,
-                    "qualified_name": node.id,
-                    "kind": node.kind.value,
-                    "file_path": node_fpath,
-                    "start_line": node.start_line,
-                    "end_line": node.end_line,
-                })
+                matches.append(
+                    {
+                        "name": node.label,
+                        "qualified_name": node.id,
+                        "kind": node.kind.value,
+                        "file_path": node_fpath,
+                        "start_line": node.start_line,
+                        "end_line": node.end_line,
+                    }
+                )
 
         return {
             "status": "success",
@@ -994,7 +1171,8 @@ class InvestigationToolExecutor:
 
         # Find matching nodes
         matching_nodes = [
-            n for n in self.graph.nodes.values()
+            n
+            for n in self.graph.nodes.values()
             if symbol.lower() == n.label.lower() or symbol.lower() in n.id.lower()
         ]
 
@@ -1004,50 +1182,58 @@ class InvestigationToolExecutor:
                 for in_edge in self.graph.in_edges.get(node.id, []):
                     if in_edge.kind in (EdgeKind.CALLS, EdgeKind.DEFINES, EdgeKind.REACHES):
                         src_node = self.graph.nodes.get(in_edge.source_id)
-                        callers.append({
-                            "caller_id": in_edge.source_id,
-                            "caller_label": src_node.label if src_node else in_edge.source_id,
-                            "file_path": src_node.file_path if src_node else "",
-                            "line": src_node.start_line if src_node else 0,
-                            "edge_kind": in_edge.kind.value,
-                        })
+                        callers.append(
+                            {
+                                "caller_id": in_edge.source_id,
+                                "caller_label": src_node.label if src_node else in_edge.source_id,
+                                "file_path": src_node.file_path if src_node else "",
+                                "line": src_node.start_line if src_node else 0,
+                                "edge_kind": in_edge.kind.value,
+                            }
+                        )
 
             # Callees (out edges with CALLS)
             if direction in ("callees", "both"):
                 for out_edge in self.graph.out_edges.get(node.id, []):
                     if out_edge.kind in (EdgeKind.CALLS, EdgeKind.DEFINES, EdgeKind.REACHES):
                         tgt_node = self.graph.nodes.get(out_edge.target_id)
-                        callees.append({
-                            "callee_id": out_edge.target_id,
-                            "callee_label": tgt_node.label if tgt_node else out_edge.target_id,
-                            "file_path": tgt_node.file_path if tgt_node else "",
-                            "line": tgt_node.start_line if tgt_node else 0,
-                            "edge_kind": out_edge.kind.value,
-                        })
+                        callees.append(
+                            {
+                                "callee_id": out_edge.target_id,
+                                "callee_label": tgt_node.label if tgt_node else out_edge.target_id,
+                                "file_path": tgt_node.file_path if tgt_node else "",
+                                "line": tgt_node.start_line if tgt_node else 0,
+                                "edge_kind": out_edge.kind.value,
+                            }
+                        )
 
         # Also cross-check call graph in intelligence
         for edge in self.intelligence.call_graph:
             if edge.callee_name.lower() == symbol.lower() and direction in ("callers", "both"):
                 if not any(c.get("caller_label") == edge.caller_symbol for c in callers):
-                    callers.append({
-                        "caller_id": edge.caller_symbol,
-                        "caller_label": edge.caller_symbol,
-                        "file_path": edge.caller_file,
-                        "line": edge.line,
-                        "edge_kind": "calls",
-                    })
+                    callers.append(
+                        {
+                            "caller_id": edge.caller_symbol,
+                            "caller_label": edge.caller_symbol,
+                            "file_path": edge.caller_file,
+                            "line": edge.line,
+                            "edge_kind": "calls",
+                        }
+                    )
             elif (
                 edge.caller_symbol.lower() == symbol.lower()
                 and direction in ("callees", "both")
                 and not any(c.get("callee_label") == edge.callee_name for c in callees)
             ):
-                callees.append({
-                    "callee_id": edge.callee_name,
-                    "callee_label": edge.callee_name,
-                    "file_path": edge.caller_file,
-                    "line": edge.line,
-                    "edge_kind": "calls",
-                })
+                callees.append(
+                    {
+                        "callee_id": edge.callee_name,
+                        "callee_label": edge.callee_name,
+                        "file_path": edge.caller_file,
+                        "line": edge.line,
+                        "edge_kind": "calls",
+                    }
+                )
 
         return {
             "status": "success",
@@ -1087,7 +1273,9 @@ class InvestigationToolExecutor:
                     {
                         "node_id": nid,
                         "label": self.graph.nodes[nid].label if nid in self.graph.nodes else nid,
-                        "file_path": self.graph.nodes[nid].file_path if nid in self.graph.nodes else "",
+                        "file_path": self.graph.nodes[nid].file_path
+                        if nid in self.graph.nodes
+                        else "",
                         "line": self.graph.nodes[nid].start_line if nid in self.graph.nodes else 0,
                     }
                     for nid in p
@@ -1101,7 +1289,8 @@ class InvestigationToolExecutor:
         route_path = args.get("route_path", "")
 
         route_nodes = [
-            n for n in self.graph.find_nodes(kind=NodeKind.ROUTE)
+            n
+            for n in self.graph.find_nodes(kind=NodeKind.ROUTE)
             if n.properties.get("route_path") == route_path or route_path.lower() in n.label.lower()
         ]
 
@@ -1110,7 +1299,8 @@ class InvestigationToolExecutor:
                 "status": "error",
                 "error": f"Route '{route_path}' not found in graph.",
                 "available_routes": [
-                    r.properties.get("route_path", r.label) for r in self.graph.find_nodes(kind=NodeKind.ROUTE)
+                    r.properties.get("route_path", r.label)
+                    for r in self.graph.find_nodes(kind=NodeKind.ROUTE)
                 ],
             }
 
@@ -1149,7 +1339,10 @@ class InvestigationToolExecutor:
         if not target_fpath:
             for fpath, syms in self.intelligence.symbols.items():
                 for s in syms:
-                    if target.lower() in s.name.lower() or target.lower() in s.qualified_name.lower():
+                    if (
+                        target.lower() in s.name.lower()
+                        or target.lower() in s.qualified_name.lower()
+                    ):
                         target_fpath = fpath
                         target_sline = s.start_line
                         target_eline = s.end_line
@@ -1184,11 +1377,18 @@ class InvestigationToolExecutor:
                     e_idx = min(len(lines), target_eline or (target_sline + 60))
                     code_snippet = "\n".join(lines[s_idx:e_idx])
 
-
                     lower_code = code_snippet.lower()
 
                     # Authentication keywords
-                    authn_terms = ["@login_required", "@jwt_required", "authenticated", "current_user", "get_current_user", "verify_token", "jwt.decode"]
+                    authn_terms = [
+                        "@login_required",
+                        "@jwt_required",
+                        "authenticated",
+                        "current_user",
+                        "get_current_user",
+                        "verify_token",
+                        "jwt.decode",
+                    ]
                     if any(k in lower_code for k in authn_terms):
                         is_authenticated = True
 
@@ -1212,11 +1412,17 @@ class InvestigationToolExecutor:
 
                     # Trust boundary crossings (queues, background workers, signed tokens, delegation)
                     boundary_keywords = [
-                        ("jwt.encode", "jwt.encode: Signs security/delegation token without downstream authority re-verification"),
+                        (
+                            "jwt.encode",
+                            "jwt.encode: Signs security/delegation token without downstream authority re-verification",
+                        ),
                         ("issue_token", "Issues bearer/delegation token"),
                         ("delegation", "Crosses delegation boundary"),
                         ("queue.put", "Dispatches payload across asynchronous message queue"),
-                        ("enqueue", "Enqueues asynchronous job without caller context re-validation"),
+                        (
+                            "enqueue",
+                            "Enqueues asynchronous job without caller context re-validation",
+                        ),
                         ("background_tasks", "Dispatches background worker task"),
                         ("celery", "Dispatches Celery worker task"),
                     ]
@@ -1227,9 +1433,26 @@ class InvestigationToolExecutor:
                 pass
 
         if matching_boundary or target_fpath:
-            is_admin_only = bool(matching_boundary and matching_boundary.is_admin_only) or "is_admin" in code_snippet
-            is_tenant_scoped = bool(matching_boundary and matching_boundary.is_tenant_scoped) or "tenant_id" in code_snippet
-            has_authorization = bool(inline_auth_checks or is_admin_only or (matching_boundary and matching_boundary.auth_decorators and any("role" in d.lower() or "admin" in d.lower() for d in matching_boundary.auth_decorators)))
+            is_admin_only = (
+                bool(matching_boundary and matching_boundary.is_admin_only)
+                or "is_admin" in code_snippet
+            )
+            is_tenant_scoped = (
+                bool(matching_boundary and matching_boundary.is_tenant_scoped)
+                or "tenant_id" in code_snippet
+            )
+            has_authorization = bool(
+                inline_auth_checks
+                or is_admin_only
+                or (
+                    matching_boundary
+                    and matching_boundary.auth_decorators
+                    and any(
+                        "role" in d.lower() or "admin" in d.lower()
+                        for d in matching_boundary.auth_decorators
+                    )
+                )
+            )
 
             analysis_notes = []
             if is_authenticated and not has_authorization:
@@ -1275,7 +1498,8 @@ class InvestigationToolExecutor:
 
         # Find matching sink nodes
         sink_nodes = [
-            n for n in self.graph.nodes.values()
+            n
+            for n in self.graph.nodes.values()
             if sink_symbol.lower() in n.label.lower() or sink_symbol.lower() in n.kind.value.lower()
         ]
 
@@ -1344,7 +1568,10 @@ class InvestigationToolExecutor:
     def _tool_challenge_hypothesis(self, args: dict[str, Any]) -> dict[str, Any]:
         hyp_id = args.get("hypothesis_id", "")
         if hyp_id not in self.hypotheses:
-            return {"status": "error", "error": f"Hypothesis '{hyp_id}' not found. Record it first."}
+            return {
+                "status": "error",
+                "error": f"Hypothesis '{hyp_id}' not found. Record it first.",
+            }
 
         hyp = self.hypotheses[hyp_id]
         counter = args.get("counterevidence", [])
@@ -1451,7 +1678,11 @@ class InvestigationToolExecutor:
             return {"status": "success", "explored_paths": explored_paths}
         if filter_type == "counterevidence":
             counter_catalog = [
-                {"hypothesis_id": h.hypothesis_id, "disposition": h.disposition, "counterevidence": h.counterevidence}
+                {
+                    "hypothesis_id": h.hypothesis_id,
+                    "disposition": h.disposition,
+                    "counterevidence": h.counterevidence,
+                }
                 for h in self.hypotheses.values()
                 if h.counterevidence
             ]
@@ -1479,47 +1710,94 @@ class InvestigationToolExecutor:
                 lines = code.splitlines()
                 for i, line in enumerate(lines, 1):
                     lower_line = line.lower()
-                    if any(q in lower_line for q in ("dispatch_", "queue.put", "enqueue", "celery", "send_task", "publish")):
-                        interactions.append({
-                            "source_file": rel_path,
-                            "line": i,
-                            "interaction_type": "asynchronous_dispatch",
-                            "code_snippet": line.strip(),
-                            "description": "Component dispatches asynchronous work payload to queue/worker without synchronous completion",
-                        })
-                    elif any(w in lower_line for w in ("def process_", "worker", "on_message", "consume", "handle_job", "taskcoordinator")):
-                        interactions.append({
-                            "source_file": rel_path,
-                            "line": i,
-                            "interaction_type": "worker_consumer",
-                            "code_snippet": line.strip(),
-                            "description": "Background worker consumes and executes asynchronous tasks or coordinates delegated execution",
-                        })
-                    elif any(c in lower_line for c in ("cache.get", "cache.set", "redis", "orders_db", "database.", "db.")):
-                        interactions.append({
-                            "source_file": rel_path,
-                            "line": i,
-                            "interaction_type": "shared_state_access",
-                            "code_snippet": line.strip(),
-                            "description": "Component accesses shared persistent or in-memory state repository",
-                        })
+                    if any(
+                        q in lower_line
+                        for q in (
+                            "dispatch_",
+                            "queue.put",
+                            "enqueue",
+                            "celery",
+                            "send_task",
+                            "publish",
+                        )
+                    ):
+                        interactions.append(
+                            {
+                                "source_file": rel_path,
+                                "line": i,
+                                "interaction_type": "asynchronous_dispatch",
+                                "code_snippet": line.strip(),
+                                "description": "Component dispatches asynchronous work payload to queue/worker without synchronous completion",
+                            }
+                        )
+                    elif any(
+                        w in lower_line
+                        for w in (
+                            "def process_",
+                            "worker",
+                            "on_message",
+                            "consume",
+                            "handle_job",
+                            "taskcoordinator",
+                        )
+                    ):
+                        interactions.append(
+                            {
+                                "source_file": rel_path,
+                                "line": i,
+                                "interaction_type": "worker_consumer",
+                                "code_snippet": line.strip(),
+                                "description": "Background worker consumes and executes asynchronous tasks or coordinates delegated execution",
+                            }
+                        )
+                    elif any(
+                        c in lower_line
+                        for c in (
+                            "cache.get",
+                            "cache.set",
+                            "redis",
+                            "orders_db",
+                            "database.",
+                            "db.",
+                        )
+                    ):
+                        interactions.append(
+                            {
+                                "source_file": rel_path,
+                                "line": i,
+                                "interaction_type": "shared_state_access",
+                                "code_snippet": line.strip(),
+                                "description": "Component accesses shared persistent or in-memory state repository",
+                            }
+                        )
 
         if component_filter != "all":
-            interactions = [it for it in interactions if component_filter in it["source_file"].lower() or component_filter in it["code_snippet"].lower()]
+            interactions = [
+                it
+                for it in interactions
+                if component_filter in it["source_file"].lower()
+                or component_filter in it["code_snippet"].lower()
+            ]
 
         # Include structured asynchronous boundary flows
         async_flows_summary = []
-        for f in self.intelligence.get_async_flows(component=None if component_filter == "all" else component_filter):
-            async_flows_summary.append({
-                "flow_id": f.flow_id,
-                "framework": f.framework.value,
-                "queue_name": f.queue_name,
-                "producer": f"{f.producer_file}:{f.producer_symbol}",
-                "consumer": f"{f.consumer_file}:{f.consumer_symbol}" if f.consumer_file else "UNRESOLVED",
-                "resolution": f.resolution_method.value,
-                "confidence": f.confidence,
-                "invariant_violations": f.security_boundary.invariant_violations,
-            })
+        for f in self.intelligence.get_async_flows(
+            component=None if component_filter == "all" else component_filter
+        ):
+            async_flows_summary.append(
+                {
+                    "flow_id": f.flow_id,
+                    "framework": f.framework.value,
+                    "queue_name": f.queue_name,
+                    "producer": f"{f.producer_file}:{f.producer_symbol}",
+                    "consumer": f"{f.consumer_file}:{f.consumer_symbol}"
+                    if f.consumer_file
+                    else "UNRESOLVED",
+                    "resolution": f.resolution_method.value,
+                    "confidence": f.confidence,
+                    "invariant_violations": f.security_boundary.invariant_violations,
+                }
+            )
 
         return {
             "status": "success",
@@ -1546,21 +1824,40 @@ class InvestigationToolExecutor:
                     lower_line = line.lower()
                     if entity and entity not in lower_line:
                         continue
-                    if any(m in lower_line for m in (".status =", ".state =", "status=", "state=", "update(status=")):
-                        transitions.append({
-                            "file_path": rel_path,
-                            "line": i,
-                            "transition_type": "state_mutation",
-                            "statement": line.strip(),
-                            "has_atomic_lock": any(lock in code.lower() for lock in ("lock", "atomic", "transaction")),
-                        })
-                    elif any(g in lower_line for g in (".status ==", ".state ==", "is_paid", "is_valid", "can_transition")):
-                        transitions.append({
-                            "file_path": rel_path,
-                            "line": i,
-                            "transition_type": "state_guard",
-                            "statement": line.strip(),
-                        })
+                    if any(
+                        m in lower_line
+                        for m in (".status =", ".state =", "status=", "state=", "update(status=")
+                    ):
+                        transitions.append(
+                            {
+                                "file_path": rel_path,
+                                "line": i,
+                                "transition_type": "state_mutation",
+                                "statement": line.strip(),
+                                "has_atomic_lock": any(
+                                    lock in code.lower()
+                                    for lock in ("lock", "atomic", "transaction")
+                                ),
+                            }
+                        )
+                    elif any(
+                        g in lower_line
+                        for g in (
+                            ".status ==",
+                            ".state ==",
+                            "is_paid",
+                            "is_valid",
+                            "can_transition",
+                        )
+                    ):
+                        transitions.append(
+                            {
+                                "file_path": rel_path,
+                                "line": i,
+                                "transition_type": "state_guard",
+                                "statement": line.strip(),
+                            }
+                        )
 
         return {
             "status": "success",
@@ -1579,24 +1876,26 @@ class InvestigationToolExecutor:
         )
         results: list[dict[str, Any]] = []
         for f in flows[:20]:
-            results.append({
-                "flow_id": f.flow_id,
-                "framework": f.framework.value,
-                "queue_name": f.queue_name,
-                "producer": f"{f.producer_file}:{f.producer_symbol}:{f.producer_line}",
-                "consumer": (
-                    f"{f.consumer_file}:{f.consumer_symbol}:{f.consumer_line}"
-                    if f.consumer_file
-                    else "UNRESOLVED"
-                ),
-                "resolution_method": f.resolution_method.value,
-                "confidence": f.confidence,
-                "payload_schema": f.payload_schema,
-                "security_boundary": f.security_boundary.to_dict(),
-                "evidence": f.evidence,
-                "unresolved_assumptions": f.unresolved_assumptions,
-                "reason_unresolved": f.reason_unresolved,
-            })
+            results.append(
+                {
+                    "flow_id": f.flow_id,
+                    "framework": f.framework.value,
+                    "queue_name": f.queue_name,
+                    "producer": f"{f.producer_file}:{f.producer_symbol}:{f.producer_line}",
+                    "consumer": (
+                        f"{f.consumer_file}:{f.consumer_symbol}:{f.consumer_line}"
+                        if f.consumer_file
+                        else "UNRESOLVED"
+                    ),
+                    "resolution_method": f.resolution_method.value,
+                    "confidence": f.confidence,
+                    "payload_schema": f.payload_schema,
+                    "security_boundary": f.security_boundary.to_dict(),
+                    "evidence": f.evidence,
+                    "unresolved_assumptions": f.unresolved_assumptions,
+                    "reason_unresolved": f.reason_unresolved,
+                }
+            )
 
         return {
             "status": "success",
@@ -1622,20 +1921,24 @@ class InvestigationToolExecutor:
 
         findings: list[dict[str, Any]] = []
         for f in matching_flows:
-            findings.append({
-                "flow_id": f.flow_id,
-                "worker": f"{f.consumer_file}:{f.consumer_symbol}" if f.consumer_file else "Unknown",
-                "queue_name": f.queue_name,
-                "consumer_reauthorizes": f.security_boundary.consumer_reauthorizes,
-                "consumer_auth_details": f.security_boundary.consumer_auth_details,
-                "tenant_isolated": f.security_boundary.tenant_isolated,
-                "tenant_propagation_method": f.security_boundary.tenant_propagation_method,
-                "invariant_violations": f.security_boundary.invariant_violations,
-                "sensitive_payload_fields": [
-                    p.to_dict() for p in f.payload_propagations if p.reaches_sensitive_sink
-                ],
-                "all_payload_fields": [p.to_dict() for p in f.payload_propagations],
-            })
+            findings.append(
+                {
+                    "flow_id": f.flow_id,
+                    "worker": f"{f.consumer_file}:{f.consumer_symbol}"
+                    if f.consumer_file
+                    else "Unknown",
+                    "queue_name": f.queue_name,
+                    "consumer_reauthorizes": f.security_boundary.consumer_reauthorizes,
+                    "consumer_auth_details": f.security_boundary.consumer_auth_details,
+                    "tenant_isolated": f.security_boundary.tenant_isolated,
+                    "tenant_propagation_method": f.security_boundary.tenant_propagation_method,
+                    "invariant_violations": f.security_boundary.invariant_violations,
+                    "sensitive_payload_fields": [
+                        p.to_dict() for p in f.payload_propagations if p.reaches_sensitive_sink
+                    ],
+                    "all_payload_fields": [p.to_dict() for p in f.payload_propagations],
+                }
+            )
 
         return {
             "status": "success",
@@ -1660,21 +1963,23 @@ class InvestigationToolExecutor:
 
         results: list[dict[str, Any]] = []
         for f in flows:
-            results.append({
-                "flow_id": f.flow_id,
-                "queue_name": f.queue_name,
-                "producer": f"{f.producer_file}:{f.producer_symbol}",
-                "consumer": (
-                    f"{f.consumer_file}:{f.consumer_symbol}"
-                    if f.consumer_file
-                    else "Unresolved"
-                ),
-                "has_idempotency_guard": f.security_boundary.has_idempotency_guard,
-                "idempotency_mechanism": f.security_boundary.idempotency_mechanism,
-                "has_retry_risk": f.security_boundary.has_retry_risk,
-                "invariant_violations": f.security_boundary.invariant_violations,
-                "evidence": f.evidence,
-            })
+            results.append(
+                {
+                    "flow_id": f.flow_id,
+                    "queue_name": f.queue_name,
+                    "producer": f"{f.producer_file}:{f.producer_symbol}",
+                    "consumer": (
+                        f"{f.consumer_file}:{f.consumer_symbol}"
+                        if f.consumer_file
+                        else "Unresolved"
+                    ),
+                    "has_idempotency_guard": f.security_boundary.has_idempotency_guard,
+                    "idempotency_mechanism": f.security_boundary.idempotency_mechanism,
+                    "has_retry_risk": f.security_boundary.has_retry_risk,
+                    "invariant_violations": f.security_boundary.invariant_violations,
+                    "evidence": f.evidence,
+                }
+            )
 
         return {
             "status": "success",
@@ -1721,7 +2026,10 @@ class InvestigationToolExecutor:
         in_scope = [f.replace("\\", "/") for f in self.intelligence.file_metadata]
         if not in_scope:
             for p in self.repository_root.rglob("*.py"):
-                if p.is_file() and not any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv") for part in p.parts):
+                if p.is_file() and not any(
+                    part.startswith(".") or part in ("__pycache__", "node_modules", "venv")
+                    for part in p.parts
+                ):
                     with contextlib.suppress(Exception):
                         in_scope.append(str(p.relative_to(self.repository_root)).replace("\\", "/"))
         facts = analyzer.analyze_repository(in_scope)
@@ -1771,115 +2079,92 @@ class InvestigationToolExecutor:
             # Adversarial self-review check: if model determined this is not exploitable or safe, skip
             is_exploitable = rf.get("is_exploitable")
             if is_exploitable is False or str(is_exploitable).lower() == "false":
-                logger.info("Finding '%s' marked not exploitable by adversarial self-review; excluding.", rf.get("title"))
+                logger.info(
+                    "Finding '%s' marked not exploitable by adversarial self-review; excluding.",
+                    rf.get("title"),
+                )
                 continue
 
             counter_list = rf.get("counterevidence", [])
-            if counter_list and any("safe" in str(c).lower() or "mitigated" in str(c).lower() or "enforced" in str(c).lower() for c in counter_list) and not is_exploitable:
-                logger.info("Finding '%s' has mitigating counterevidence and lacks exploitability confirmation; excluding.", rf.get("title"))
+            if (
+                counter_list
+                and any(
+                    "safe" in str(c).lower()
+                    or "mitigated" in str(c).lower()
+                    or "enforced" in str(c).lower()
+                    for c in counter_list
+                )
+                and not is_exploitable
+            ):
+                logger.info(
+                    "Finding '%s' has mitigating counterevidence and lacks exploitability confirmation; excluding.",
+                    rf.get("title"),
+                )
                 continue
 
             raw_fpath = str(rf.get("file_path", "")).strip().replace("\\", "/")
             repo_str = str(self.repository_root).replace("\\", "/").rstrip("/")
             if raw_fpath.startswith(repo_str):
-                raw_fpath = raw_fpath[len(repo_str):]
+                raw_fpath = raw_fpath[len(repo_str) :]
             if raw_fpath.startswith("./"):
                 raw_fpath = raw_fpath[2:]
             fpath = raw_fpath.lstrip("/")
 
             # Retrieve snippet from file and clamp line numbers to actual line count
 
-
             raw_sl = _safe_int(rf.get("start_line"), 1)
-
 
             raw_el = _safe_int(rf.get("end_line"), raw_sl)
 
-
             try:
-
-
                 full_p = resolve_safe_path(self.repository_root, fpath)
-
 
                 lines = full_p.read_text(encoding="utf-8", errors="replace").splitlines()
 
-
                 total_lines = len(lines)
-
 
                 sline = max(1, min(raw_sl, total_lines)) if total_lines else raw_sl
 
-
                 eline = max(sline, min(raw_el, total_lines)) if total_lines else raw_el
-
 
                 s_idx = max(0, sline - 1)
 
-
                 e_idx = min(len(lines), eline)
-
 
                 snippet = "\n".join(lines[s_idx:e_idx])
 
-
             except Exception:
-
-
                 try:
-
-
                     cand_p = Path(rf.get("file_path", ""))
 
-
                     if cand_p.is_file():
-
-
                         lines = cand_p.read_text(encoding="utf-8", errors="replace").splitlines()
-
 
                         total_lines = len(lines)
 
-
                         sline = max(1, min(raw_sl, total_lines)) if total_lines else raw_sl
-
 
                         eline = max(sline, min(raw_el, total_lines)) if total_lines else raw_el
 
-
                         s_idx = max(0, sline - 1)
-
 
                         e_idx = min(len(lines), eline)
 
-
                         snippet = "\n".join(lines[s_idx:e_idx])
 
-
                     else:
-
-
                         sline = raw_sl
-
 
                         eline = max(sline, raw_el)
 
-
                         snippet = ""
 
-
                 except Exception:
-
-
                     sline = raw_sl
-
 
                     eline = max(sline, raw_el)
 
-
-                    snippet = ""
-
-
+                    snippet = ""
 
             loc = SourceLocation(
                 file_path=fpath.replace("\\", "/"),
@@ -1903,7 +2188,8 @@ class InvestigationToolExecutor:
                             ev_role = r
                             break
                     ev_fp = str(ev_item.get("file_path", fpath)).replace("\\", "/").lstrip("/")
-                    ev_sl = _safe_int(ev_item.get("start_line"), sline)
+                    ev_sl = _safe_int(ev_item.get("start_line"), sline)
+
                     ev_el = _safe_int(ev_item.get("end_line"), ev_sl)
                     ce = CodeEvidence(
                         evidence_id=str(ev_item.get("evidence_id", "")),
@@ -1952,7 +2238,9 @@ class InvestigationToolExecutor:
             raw_steps = rf.get("attack_chain_steps", [])
             for idx, step_item in enumerate(raw_steps, start=1):
                 if isinstance(step_item, dict):
-                    step_desc = str(step_item.get("description", step_item.get("action", str(step_item))))
+                    step_desc = str(
+                        step_item.get("description", step_item.get("action", str(step_item)))
+                    )
                     step_op = str(step_item.get("operation_type", "attack_step"))
                 else:
                     step_desc = str(step_item)
@@ -2013,12 +2301,19 @@ class InvestigationToolExecutor:
             for g in self.proof_gaps.values():
                 if (
                     g.finding_id == f_ident
-                    or (g.target_symbol and g.target_symbol in (fpath, str(rf.get("entry_point", ""))))
+                    or (
+                        g.target_symbol
+                        and g.target_symbol in (fpath, str(rf.get("entry_point", "")))
+                    )
                 ) and g not in finding_gaps:
                     finding_gaps.append(g)
 
             raw_refs = rf.get("root_cause_evidence_refs", [])
-            ordered_refs = [str(r) for r in raw_refs] if raw_refs else [e.evidence_id for e in evidence_collection]
+            ordered_refs = (
+                [str(r) for r in raw_refs]
+                if raw_refs
+                else [e.evidence_id for e in evidence_collection]
+            )
 
             f = Finding(
                 finding_id=f_ident,
@@ -2028,7 +2323,9 @@ class InvestigationToolExecutor:
                 summary=str(rf.get("summary", "")),
                 category=cat,
                 severity=sev,
-                confidence=ConfidenceLevel.HIGH if not rf.get("counterevidence") else ConfidenceLevel.MEDIUM,
+                confidence=ConfidenceLevel.HIGH
+                if not rf.get("counterevidence")
+                else ConfidenceLevel.MEDIUM,
                 file_path=loc.file_path,
                 start_line=sline,
                 end_line=eline,
@@ -2064,7 +2361,12 @@ class InvestigationToolExecutor:
         self.invalid_citations = [
             v.to_dict()
             for v in report.violations
-            if v.code in (ViolationCode.INVALID_CITATION, ViolationCode.FILE_NOT_FOUND, ViolationCode.OUT_OF_BOUNDS_LINE)
+            if v.code
+            in (
+                ViolationCode.INVALID_CITATION,
+                ViolationCode.FILE_NOT_FOUND,
+                ViolationCode.OUT_OF_BOUNDS_LINE,
+            )
         ]
 
         if self.storage:
@@ -2131,13 +2433,17 @@ class InvestigationToolExecutor:
             "trace": res,
         }
 
-    def _tool_find_routes_reaching_sensitive_operation(self, args: dict[str, Any]) -> dict[str, Any]:
+    def _tool_find_routes_reaching_sensitive_operation(
+        self, args: dict[str, Any]
+    ) -> dict[str, Any]:
         sink_kind = args.get("sink_kind")
         if sink_kind == "all":
             sink_kind = None
         route_filter = args.get("route_filter")
 
-        chains = self.graph.query_route_reachability_chain(route_path=route_filter, sink_kind=sink_kind)
+        chains = self.graph.query_route_reachability_chain(
+            route_path=route_filter, sink_kind=sink_kind
+        )
         return {
             "status": "success",
             "sink_kind": sink_kind,

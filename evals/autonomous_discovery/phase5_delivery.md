@@ -246,3 +246,4 @@ uv run python evals/autonomous_discovery/run_autonomous_discovery_evaluation.py
 - [`evals/autonomous_discovery/workbench_autonomous.db`](file:///e:/Semantiq-Security/semantiq-security/evals/autonomous_discovery/workbench_autonomous.db): SQLite persistence database (Schema V5).
 - [`evals/autonomous_discovery/phase5_findings.sarif`](file:///e:/Semantiq-Security/semantiq-security/evals/autonomous_discovery/phase5_findings.sarif): OASIS SARIF 2.1.0 finding export.
 - [`tests/unit/test_autonomous_discovery_engine.py`](file:///e:/Semantiq-Security/semantiq-security/tests/unit/test_autonomous_discovery_engine.py): Comprehensive unit tests.
+

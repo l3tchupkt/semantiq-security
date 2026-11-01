@@ -112,11 +112,19 @@ class InvestigationCoordinator:
         def find_matching_symbols(keywords: list[str]) -> list[str]:
             matched: list[str] = []
             for r in routes:
-                if any(kw in r.id.lower() or kw in r.label.lower() for kw in keywords) and r.label and r.label not in matched:
+                if (
+                    any(kw in r.id.lower() or kw in r.label.lower() for kw in keywords)
+                    and r.label
+                    and r.label not in matched
+                ):
                     matched.append(r.label)
             with contextlib.suppress(Exception):
                 for fn in graph.find_nodes(kind=NodeKind.FUNCTION):
-                    if any(kw in fn.id.lower() or kw in fn.label.lower() for kw in keywords) and fn.label and fn.label not in matched:
+                    if (
+                        any(kw in fn.id.lower() or kw in fn.label.lower() for kw in keywords)
+                        and fn.label
+                        and fn.label not in matched
+                    ):
                         matched.append(fn.label)
             if not matched:
                 with contextlib.suppress(Exception):
@@ -130,10 +138,43 @@ class InvestigationCoordinator:
             return matched if matched else py_files[:15]
 
         # 1. Packet: Command Dispatch & Process Execution Attack Surface
-        cmd_routes = [r.id for r in routes if any(kw in r.id.lower() for kw in ["cmd", "script", "seq", "run", "exec", "process", "shell", "api", "cli", "dispatch"])]
-        cmd_files = find_matching_files(["gui", "server", "cmd", "exec", "process", "app", "dispatch", "run", "cli"])
+        cmd_routes = [
+            r.id
+            for r in routes
+            if any(
+                kw in r.id.lower()
+                for kw in [
+                    "cmd",
+                    "script",
+                    "seq",
+                    "run",
+                    "exec",
+                    "process",
+                    "shell",
+                    "api",
+                    "cli",
+                    "dispatch",
+                ]
+            )
+        ]
+        cmd_files = find_matching_files(
+            ["gui", "server", "cmd", "exec", "process", "app", "dispatch", "run", "cli"]
+        )
         cmd_symbols = find_matching_symbols(
-            ["cmd", "script", "seq", "run", "exec", "process", "popen", "system", "send", "call", "cli", "dispatch"],
+            [
+                "cmd",
+                "script",
+                "seq",
+                "run",
+                "exec",
+                "process",
+                "popen",
+                "system",
+                "send",
+                "call",
+                "cli",
+                "dispatch",
+            ],
         )
         packets.append(
             InvestigationPacket(
@@ -151,10 +192,31 @@ class InvestigationCoordinator:
         )
 
         # 2. Packet: Session Management & Authentication Boundaries
-        auth_routes = [r.id for r in routes if any(kw in r.id.lower() for kw in ["session", "auth", "login", "user", "token", "cred", "secret"])]
-        auth_files = find_matching_files(["auth", "session", "user", "login", "security", "token", "cred"])
+        auth_routes = [
+            r.id
+            for r in routes
+            if any(
+                kw in r.id.lower()
+                for kw in ["session", "auth", "login", "user", "token", "cred", "secret"]
+            )
+        ]
+        auth_files = find_matching_files(
+            ["auth", "session", "user", "login", "security", "token", "cred"]
+        )
         auth_symbols = find_matching_symbols(
-            ["session", "token", "auth", "login", "id", "store", "origin", "csrf", "cred", "user", "pass"],
+            [
+                "session",
+                "token",
+                "auth",
+                "login",
+                "id",
+                "store",
+                "origin",
+                "csrf",
+                "cred",
+                "user",
+                "pass",
+            ],
         )
         packets.append(
             InvestigationPacket(
@@ -172,10 +234,31 @@ class InvestigationCoordinator:
         )
 
         # 3. Packet: Static File Serving & Arbitrary File Traversal Boundary
-        file_routes = [r.id for r in routes if any(kw in r.id.lower() for kw in ["static", "file", "load", "open", "read", "download", "path"])]
-        file_files = find_matching_files(["static", "file", "load", "open", "download", "view", "server"])
+        file_routes = [
+            r.id
+            for r in routes
+            if any(
+                kw in r.id.lower()
+                for kw in ["static", "file", "load", "open", "read", "download", "path"]
+            )
+        ]
+        file_files = find_matching_files(
+            ["static", "file", "load", "open", "download", "view", "server"]
+        )
         file_symbols = find_matching_symbols(
-            ["static", "file", "load", "open", "read", "path", "download", "render", "tar", "zip", "extract"],
+            [
+                "static",
+                "file",
+                "load",
+                "open",
+                "read",
+                "path",
+                "download",
+                "render",
+                "tar",
+                "zip",
+                "extract",
+            ],
         )
         packets.append(
             InvestigationPacket(
@@ -236,10 +319,15 @@ class InvestigationCoordinator:
         py_files = [
             str(p.relative_to(self.repository_root)).replace("\\", "/")
             for p in self.repository_root.rglob("*.py")
-            if not any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv") for part in p.parts)
+            if not any(
+                part.startswith(".") or part in ("__pycache__", "node_modules", "venv")
+                for part in p.parts
+            )
         ]
         self.intelligence.index_repository(py_files)
-        graph_res = GraphBuilder(self.repository_root, source_revision=self.source_revision).build(py_files)
+        graph_res = GraphBuilder(self.repository_root, source_revision=self.source_revision).build(
+            py_files
+        )
         graph = graph_res.graph
 
         context = InvestigationContext(
@@ -258,27 +346,55 @@ class InvestigationCoordinator:
         # 3. Instantiate specialized workers per packet
         workers: list[BaseInvestigationWorker] = []
         if mode == "sequential":
-            pkt = packets[0] if packets else InvestigationPacket(
-                packet_id="pkt_seq_01",
-                title="Repository Security Investigation",
-                description="Comprehensive baseline sequential security investigation.",
-                focus_category="general",
-                priority=10,
-                file_paths=py_files[:10],
-                budget=PacketBudget(max_turns=3, max_tokens=15000, timeout_seconds=90.0),
+            pkt = (
+                packets[0]
+                if packets
+                else InvestigationPacket(
+                    packet_id="pkt_seq_01",
+                    title="Repository Security Investigation",
+                    description="Comprehensive baseline sequential security investigation.",
+                    focus_category="general",
+                    priority=10,
+                    file_paths=py_files[:10],
+                    budget=PacketBudget(max_turns=3, max_tokens=15000, timeout_seconds=90.0),
+                )
             )
-            workers.append(DiscoveryWorker(worker_id="worker_sequential_baseline", packet=pkt, provider=provider))
+            workers.append(
+                DiscoveryWorker(
+                    worker_id="worker_sequential_baseline", packet=pkt, provider=provider
+                )
+            )
         else:
             for pkt in packets:
                 if "command" in pkt.packet_id or "dispatch" in pkt.packet_id:
-                    workers.append(DiscoveryWorker(worker_id=f"worker_disc_{pkt.packet_id}", packet=pkt, provider=provider))
-                    workers.append(DataflowWorker(worker_id=f"worker_df_{pkt.packet_id}", packet=pkt, provider=provider))
+                    workers.append(
+                        DiscoveryWorker(
+                            worker_id=f"worker_disc_{pkt.packet_id}", packet=pkt, provider=provider
+                        )
+                    )
+                    workers.append(
+                        DataflowWorker(
+                            worker_id=f"worker_df_{pkt.packet_id}", packet=pkt, provider=provider
+                        )
+                    )
                 elif "session" in pkt.packet_id or "auth" in pkt.packet_id:
-                    workers.append(AuthorizationWorker(worker_id=f"worker_auth_{pkt.packet_id}", packet=pkt, provider=provider))
+                    workers.append(
+                        AuthorizationWorker(
+                            worker_id=f"worker_auth_{pkt.packet_id}", packet=pkt, provider=provider
+                        )
+                    )
                 elif "traversal" in pkt.packet_id or "file" in pkt.packet_id:
-                    workers.append(DataflowWorker(worker_id=f"worker_df_{pkt.packet_id}", packet=pkt, provider=provider))
+                    workers.append(
+                        DataflowWorker(
+                            worker_id=f"worker_df_{pkt.packet_id}", packet=pkt, provider=provider
+                        )
+                    )
                 else:
-                    workers.append(DiscoveryWorker(worker_id=f"worker_disc_{pkt.packet_id}", packet=pkt, provider=provider))
+                    workers.append(
+                        DiscoveryWorker(
+                            worker_id=f"worker_disc_{pkt.packet_id}", packet=pkt, provider=provider
+                        )
+                    )
 
         # 4. If adversarial verification enabled, add adversarial worker
         if include_adversarial:
@@ -287,19 +403,27 @@ class InvestigationCoordinator:
                 for sym in p.target_symbols:
                     if sym not in all_targets:
                         all_targets.append(sym)
-            cand_summary = f"Audit candidate boundaries and entrypoints: {', '.join(all_targets[:8])}"
+            cand_summary = (
+                f"Audit candidate boundaries and entrypoints: {', '.join(all_targets[:8])}"
+            )
             adv_packet = InvestigationPacket(
                 packet_id="pkt_adversarial_challenge",
                 title="Adversarial Verification & Sanitizer Challenge",
                 description="Challenges candidate findings, searches for active sanitizers (is_relative_to, safe types, CSRF tokens), and records proof gaps.",
                 focus_category="adversarial_verification",
                 priority=10,
-                target_symbols=all_targets[:10] if all_targets else ["dispatch", "handler", "execute"],
+                target_symbols=all_targets[:10]
+                if all_targets
+                else ["dispatch", "handler", "execute"],
                 file_paths=py_files[:15],
                 budget=PacketBudget(max_turns=3, max_tokens=12000, timeout_seconds=90.0),
                 metadata={"candidate_summary": cand_summary},
             )
-            workers.append(AdversarialVerificationWorker(worker_id="worker_adv_challenge", packet=adv_packet, provider=provider))
+            workers.append(
+                AdversarialVerificationWorker(
+                    worker_id="worker_adv_challenge", packet=adv_packet, provider=provider
+                )
+            )
 
         # 5. Execute workers with bounded concurrency semaphore
         semaphore = asyncio.Semaphore(max_concurrent_workers)
@@ -311,7 +435,9 @@ class InvestigationCoordinator:
                 w.packet.assigned_worker_id = w.worker_id
                 try:
                     res = await w.execute(context)
-                    w.packet.status = PacketStatus.COMPLETED if res.is_successful else PacketStatus.FAILED
+                    w.packet.status = (
+                        PacketStatus.COMPLETED if res.is_successful else PacketStatus.FAILED
+                    )
                     worker_outputs.append(res)
                     return res
                 except Exception as exc:

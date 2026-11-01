@@ -24,7 +24,6 @@ import logging
 import os
 import sys
 import time
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -49,7 +48,6 @@ from semantiq.graph.builder import GraphBuilder
 from semantiq.integrations.sarif import SARIFExporter
 from semantiq.models import CodeEvidenceRole, Finding, FindingLifecycleState
 from semantiq.providers.base import BaseAIProvider
-from semantiq.providers.mock import MockAIProvider
 from semantiq.storage.sqlite import SQLiteStorage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -73,10 +71,18 @@ def get_scoped_py_files(repo_path: Path, subpaths: list[str]) -> list[str]:
                 # Exclude test files, virtualenvs, and vendor build dirs
                 rel = str(p.relative_to(repo_path)).replace("\\", "/")
                 parts = p.parts
-                if any(part.startswith(".") or part in ("tests", "test", "venv", "__pycache__", "build", "dist") for part in parts):
+                if any(
+                    part.startswith(".")
+                    or part in ("tests", "test", "venv", "__pycache__", "build", "dist")
+                    for part in parts
+                ):
                     continue
                 # For pyload, skip bulky third-party downloader plugins to keep evaluation focused
-                if "plugins/downloaders" in rel or "plugins/hosters" in rel or "plugins/crypters" in rel:
+                if (
+                    "plugins/downloaders" in rel
+                    or "plugins/hosters" in rel
+                    or "plugins/crypters" in rel
+                ):
                     continue
                 collected.append(rel)
     return sorted(list(set(collected)))
@@ -86,10 +92,18 @@ def evaluate_findings_against_ground_truth(
     findings: list[Finding],
     ground_truth: list[GroundTruthVulnerability],
 ) -> dict[str, Any]:
-    """Calculate true positives, false positives, precision, recall, and completeness."""
+    """Calculate true positives, false positives, precision, recall, and completeness.
+
+    Distinguishes unmitigated vulnerabilities from mitigated negative controls.
+    Findings matching mitigated controls are treated as false positives.
+    """
     active_findings = [f for f in findings if f.lifecycle_state != FindingLifecycleState.REJECTED]
+    vulnerable_gt = [gt for gt in ground_truth if not gt.is_mitigated]
+    negative_controls = [gt for gt in ground_truth if gt.is_mitigated]
+
     matched_gt: set[str] = set()
     matched_findings: set[str] = set()
+    matched_mitigated_gt: set[str] = set()
 
     for gt in ground_truth:
         for f in active_findings:
@@ -104,16 +118,19 @@ def evaluate_findings_against_ground_truth(
             cat_match = f.category == gt.category
 
             if file_match and (symbol_match or cat_match):
-                matched_gt.add(gt.vuln_id)
-                matched_findings.add(f.finding_id)
+                if gt.is_mitigated:
+                    matched_mitigated_gt.add(gt.vuln_id)
+                else:
+                    matched_gt.add(gt.vuln_id)
+                    matched_findings.add(f.finding_id)
                 break
 
     tp = len(matched_gt)
     fp = max(0, len(active_findings) - len(matched_findings))
-    fn = len(ground_truth) - tp
+    fn = len(vulnerable_gt) - tp
 
     precision = round((tp / (tp + fp)) * 100.0, 1) if (tp + fp) > 0 else 0.0
-    recall = round((tp / len(ground_truth)) * 100.0, 1) if ground_truth else 0.0
+    recall = round((tp / len(vulnerable_gt)) * 100.0, 1) if vulnerable_gt else 0.0
 
     # Exploit-path completeness (% of findings with verified entrypoint, propagation, and sink)
     complete_count = 0
@@ -124,10 +141,12 @@ def evaluate_findings_against_ground_truth(
     completeness = round((complete_count / max(1, len(active_findings))) * 100.0, 1)
 
     # Root-cause accuracy (% of matched findings having correct category and severity)
-    root_cause_acc = round((tp / max(1, len(ground_truth))) * 100.0, 1)
+    root_cause_acc = round((tp / max(1, len(vulnerable_gt))) * 100.0, 1)
 
     # Severity calibration (% findings not marked critical unless remote RCE)
-    calibrated_count = sum(1 for f in active_findings if f.severity.value in ("critical", "high", "medium"))
+    calibrated_count = sum(
+        1 for f in active_findings if f.severity.value in ("critical", "high", "medium")
+    )
     calibration = round((calibrated_count / max(1, len(active_findings))) * 100.0, 1)
 
     # Proof gaps
@@ -144,11 +163,17 @@ def evaluate_findings_against_ground_truth(
         "root_cause_accuracy": root_cause_acc,
         "severity_calibration": calibration,
         "total_proof_gaps_identified": total_gaps,
+        "ground_truth_vulnerable_count": len(vulnerable_gt),
+        "negative_controls_total": len(negative_controls),
+        "negative_controls_rejected": len(negative_controls) - len(matched_mitigated_gt),
         "matched_ground_truth_ids": sorted(matched_gt),
+        "matched_mitigated_negative_control_ids": sorted(matched_mitigated_gt),
     }
 
 
-def run_mode_1_sequential(spec: TargetRepositorySpec, files: list[str]) -> tuple[list[Finding], float]:
+def run_mode_1_sequential(
+    spec: TargetRepositorySpec, files: list[str]
+) -> tuple[list[Finding], float]:
     """Execute Mode 1: Sequential Static Scan."""
     t0 = time.perf_counter()
     engine = VulnerabilityDiscoveryEngine(repository_root=spec.root_path)
@@ -173,7 +198,7 @@ async def run_mode_2_parallel(
 
     builder = GraphBuilder(spec.root_path, source_revision=spec.pinned_commit)
     graph_res = builder.build(files)
-    packets = coordinator.partition_investigation_packets(graph_res.graph, files)
+    _packets = coordinator.partition_investigation_packets(graph_res.graph, files)
 
     # Mode 2 reducer on candidate findings with path-specific adversarial verification
     engine = VulnerabilityDiscoveryEngine(repository_root=spec.root_path)
@@ -239,16 +264,35 @@ def main() -> None:
         "semantiq_version": "0.1.0",
         "targets": {},
         "aggregate_comparison": {
-            "mode_1_sequential": {"tp": 0, "fp": 0, "precision": 0.0, "recall": 0.0, "time_seconds": 0.0},
-            "mode_2_parallel": {"tp": 0, "fp": 0, "precision": 0.0, "recall": 0.0, "time_seconds": 0.0},
-            "mode_3_autonomous": {"tp": 0, "fp": 0, "precision": 0.0, "recall": 0.0, "time_seconds": 0.0},
+            "mode_1_sequential": {
+                "tp": 0,
+                "fp": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "time_seconds": 0.0,
+            },
+            "mode_2_parallel": {
+                "tp": 0,
+                "fp": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "time_seconds": 0.0,
+            },
+            "mode_3_autonomous": {
+                "tp": 0,
+                "fp": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "time_seconds": 0.0,
+            },
         },
     }
 
     m1_tot_tp = m1_tot_fp = 0
     m2_tot_tp = m2_tot_fp = 0
     m3_tot_tp = m3_tot_fp = 0
-    tot_gt = 0
+    tot_vulnerable_gt = 0
+    tot_negative_controls = 0
 
     for target_key, spec in DATASET_REGISTRY.items():
         logger.info("--- Evaluating Target: %s (%s) ---", spec.name, spec.pinned_commit)
@@ -258,7 +302,10 @@ def main() -> None:
 
         scoped_files = get_scoped_py_files(spec.root_path, spec.in_scope_subpaths)
         logger.info("Found %d in-scope Python files for %s", len(scoped_files), spec.name)
-        tot_gt += len(spec.ground_truth)
+        vulnerable_gt_count = len([gt for gt in spec.ground_truth if not gt.is_mitigated])
+        negative_ctrl_count = len([gt for gt in spec.ground_truth if gt.is_mitigated])
+        tot_vulnerable_gt += vulnerable_gt_count
+        tot_negative_controls += negative_ctrl_count
 
         # Mode 1: Sequential Static Scan
         m1_findings, m1_time = run_mode_1_sequential(spec, scoped_files)
@@ -268,14 +315,18 @@ def main() -> None:
         m1_tot_fp += m1_metrics["false_positives"]
 
         # Mode 2: Parallel Multi-Perspective Investigation
-        m2_findings, m2_time = asyncio.run(run_mode_2_parallel(spec, scoped_files, storage, provider=None))
+        m2_findings, m2_time = asyncio.run(
+            run_mode_2_parallel(spec, scoped_files, storage, provider=None)
+        )
         m2_metrics = evaluate_findings_against_ground_truth(m2_findings, spec.ground_truth)
         m2_metrics["elapsed_seconds"] = m2_time
         m2_tot_tp += m2_metrics["true_positives"]
         m2_tot_fp += m2_metrics["false_positives"]
 
         # Mode 3: Adaptive Hypothesis-Driven Autonomous Discovery
-        m3_findings, m3_rejected, m3_coverage, m3_time = run_mode_3_autonomous(spec, scoped_files, storage)
+        m3_findings, m3_rejected, m3_coverage, m3_time = run_mode_3_autonomous(
+            spec, scoped_files, storage
+        )
         m3_metrics = evaluate_findings_against_ground_truth(m3_findings, spec.ground_truth)
         m3_metrics["elapsed_seconds"] = m3_time
         m3_metrics["coverage"] = m3_coverage
@@ -293,7 +344,8 @@ def main() -> None:
             "commit": spec.pinned_commit,
             "architecture": spec.architecture_style,
             "files_evaluated": len(scoped_files),
-            "ground_truth_count": len(spec.ground_truth),
+            "ground_truth_vulnerable_count": vulnerable_gt_count,
+            "negative_controls_count": negative_ctrl_count,
             "modes": {
                 "mode_1_sequential": m1_metrics,
                 "mode_2_parallel": m2_metrics,
@@ -303,11 +355,11 @@ def main() -> None:
 
     # Aggregate comparisons
     m1_prec = round((m1_tot_tp / max(1, m1_tot_tp + m1_tot_fp)) * 100.0, 1)
-    m1_rec = round((m1_tot_tp / max(1, tot_gt)) * 100.0, 1)
+    m1_rec = round((m1_tot_tp / max(1, tot_vulnerable_gt)) * 100.0, 1)
     m2_prec = round((m2_tot_tp / max(1, m2_tot_tp + m2_tot_fp)) * 100.0, 1)
-    m2_rec = round((m2_tot_tp / max(1, tot_gt)) * 100.0, 1)
+    m2_rec = round((m2_tot_tp / max(1, tot_vulnerable_gt)) * 100.0, 1)
     m3_prec = round((m3_tot_tp / max(1, m3_tot_tp + m3_tot_fp)) * 100.0, 1)
-    m3_rec = round((m3_tot_tp / max(1, tot_gt)) * 100.0, 1)
+    m3_rec = round((m3_tot_tp / max(1, tot_vulnerable_gt)) * 100.0, 1)
 
     benchmark_results["aggregate_comparison"] = {
         "mode_1_sequential": {
@@ -315,21 +367,24 @@ def main() -> None:
             "fp": m1_tot_fp,
             "precision": m1_prec,
             "recall": m1_rec,
-            "ground_truth_total": tot_gt,
+            "ground_truth_vulnerable_total": tot_vulnerable_gt,
+            "negative_controls_total": tot_negative_controls,
         },
         "mode_2_parallel": {
             "tp": m2_tot_tp,
             "fp": m2_tot_fp,
             "precision": m2_prec,
             "recall": m2_rec,
-            "ground_truth_total": tot_gt,
+            "ground_truth_vulnerable_total": tot_vulnerable_gt,
+            "negative_controls_total": tot_negative_controls,
         },
         "mode_3_autonomous": {
             "tp": m3_tot_tp,
             "fp": m3_tot_fp,
             "precision": m3_prec,
             "recall": m3_rec,
-            "ground_truth_total": tot_gt,
+            "ground_truth_vulnerable_total": tot_vulnerable_gt,
+            "negative_controls_total": tot_negative_controls,
         },
     }
 
@@ -350,9 +405,15 @@ def main() -> None:
     total_time = round(time.perf_counter() - t_global_start, 2)
     logger.info("=== Phase 5 Autonomous Discovery Benchmark Complete in %.2fs ===", total_time)
     print("\n================== BENCHMARK SUMMARY ==================")
-    print(f"Mode 1 (Sequential Scan):  TP={m1_tot_tp}/{tot_gt} (Recall: {m1_rec}%), FP={m1_tot_fp}, Precision: {m1_prec}%")
-    print(f"Mode 2 (Parallel Reducer): TP={m2_tot_tp}/{tot_gt} (Recall: {m2_rec}%), FP={m2_tot_fp}, Precision: {m2_prec}%")
-    print(f"Mode 3 (Phase 5 Engine):   TP={m3_tot_tp}/{tot_gt} (Recall: {m3_rec}%), FP={m3_tot_fp}, Precision: {m3_prec}%")
+    print(
+        f"Mode 1 (Sequential Scan):  TP={m1_tot_tp}/{tot_vulnerable_gt} (Recall: {m1_rec}%), FP={m1_tot_fp}, Precision: {m1_prec}%"
+    )
+    print(
+        f"Mode 2 (Parallel Reducer): TP={m2_tot_tp}/{tot_vulnerable_gt} (Recall: {m2_rec}%), FP={m2_tot_fp}, Precision: {m2_prec}%"
+    )
+    print(
+        f"Mode 3 (Phase 5 Engine):   TP={m3_tot_tp}/{tot_vulnerable_gt} (Recall: {m3_rec}%), FP={m3_tot_fp}, Precision: {m3_prec}%"
+    )
     print("=======================================================\n")
 
 

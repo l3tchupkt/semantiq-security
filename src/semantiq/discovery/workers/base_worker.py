@@ -116,14 +116,16 @@ class BaseInvestigationWorker(ABC):
 
                 # Guide worker towards concluding on final turns
                 if turn == max_turns and not executor.is_finished:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            f"You have reached your final investigation turn for packet {self.packet.packet_id}. "
-                            "Please conclude by calling finish_investigation with any discovered findings, "
-                            "code evidence (7 semantic roles), and proof gaps, or record_hypothesis."
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"You have reached your final investigation turn for packet {self.packet.packet_id}. "
+                                "Please conclude by calling finish_investigation with any discovered findings, "
+                                "code evidence (7 semantic roles), and proof gaps, or record_hypothesis."
+                            ),
+                        }
+                    )
 
                 try:
                     response = await asyncio.wait_for(
@@ -135,10 +137,17 @@ class BaseInvestigationWorker(ABC):
                         timeout=80.0,
                     )
                 except asyncio.TimeoutError:
-                    logger.warning("Worker [%s] turn %d timed out during provider call", self.worker_id, turn)
+                    logger.warning(
+                        "Worker [%s] turn %d timed out during provider call", self.worker_id, turn
+                    )
                     break
                 except Exception as exc:
-                    logger.warning("Worker [%s] encountered provider error on turn %d: %s", self.worker_id, turn, exc)
+                    logger.warning(
+                        "Worker [%s] encountered provider error on turn %d: %s",
+                        self.worker_id,
+                        turn,
+                        exc,
+                    )
                     error_message = str(exc)
                     break
 
@@ -156,7 +165,10 @@ class BaseInvestigationWorker(ABC):
                         {
                             "id": tc.call_id,
                             "type": "function",
-                            "function": {"name": tc.tool_name, "arguments": json.dumps(tc.arguments)},
+                            "function": {
+                                "name": tc.tool_name,
+                                "arguments": json.dumps(tc.arguments),
+                            },
                         }
                         for tc in response.tool_calls
                     ]
@@ -166,10 +178,12 @@ class BaseInvestigationWorker(ABC):
                     # Model provided text without tool calls
                     if executor.is_finished:
                         break
-                    messages.append({
-                        "role": "user",
-                        "content": "Please continue by querying the graph or recording candidate evidence.",
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "Please continue by querying the graph or recording candidate evidence.",
+                        }
+                    )
                     continue
 
                 for tc in response.tool_calls:
@@ -183,7 +197,10 @@ class BaseInvestigationWorker(ABC):
                     if isinstance(tool_res, dict):
                         if "path" in tool_res or "hops" in tool_res or "evidence_chain" in tool_res:
                             graph_paths_used.append(tool_res)
-                        if "unresolved_sites" in tool_res or tool_name == "show_unresolved_dynamic_dispatch":
+                        if (
+                            "unresolved_sites" in tool_res
+                            or tool_name == "show_unresolved_dynamic_dispatch"
+                        ):
                             sites = tool_res.get("unresolved_dispatches", [])
                             if isinstance(sites, list):
                                 unresolved_sites.extend(sites[:5])
@@ -193,11 +210,13 @@ class BaseInvestigationWorker(ABC):
                                 "Synthesize your evidence and call finish_investigation with any verified findings."
                             )
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.call_id,
-                        "content": json.dumps(tool_res, default=str),
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.call_id,
+                            "content": json.dumps(tool_res, default=str),
+                        }
+                    )
 
                 if executor.is_finished:
                     break
@@ -210,7 +229,9 @@ class BaseInvestigationWorker(ABC):
         # If turn limit reached without calling finish_investigation, allow one final wrap-up call
         if not executor.is_finished and is_successful:
             try:
-                finish_tool = next((t for t in self.tools if t.name == "finish_investigation"), None)
+                finish_tool = next(
+                    (t for t in self.tools if t.name == "finish_investigation"), None
+                )
                 if finish_tool:
                     wrap_up_msg = {
                         "role": "user",
@@ -226,7 +247,10 @@ class BaseInvestigationWorker(ABC):
                             messages=messages,
                             tools=[finish_tool],
                             system_prompt=system_prompt,
-                            tool_choice={"type": "function", "function": {"name": "finish_investigation"}},
+                            tool_choice={
+                                "type": "function",
+                                "function": {"name": "finish_investigation"},
+                            },
                         ),
                         timeout=80.0,
                     )
@@ -238,7 +262,9 @@ class BaseInvestigationWorker(ABC):
                     if wrap_up_resp.tool_calls:
                         for tc in wrap_up_resp.tool_calls:
                             if tc.tool_name == "finish_investigation":
-                                queries_performed.append(f"{tc.tool_name}({','.join(tc.arguments.keys())})")
+                                queries_performed.append(
+                                    f"{tc.tool_name}({','.join(tc.arguments.keys())})"
+                                )
                                 executor.execute(tc.tool_name, tc.arguments)
                                 break
             except Exception as wrap_err:
@@ -256,7 +282,9 @@ class BaseInvestigationWorker(ABC):
                     worker_id=self.worker_id,
                     title=getattr(h, "statement", getattr(h, "title", h_id)),
                     description=getattr(h, "statement", getattr(h, "description", "")),
-                    target_entrypoint=getattr(h, "entry_point", getattr(h, "target_entrypoint", None)),
+                    target_entrypoint=getattr(
+                        h, "entry_point", getattr(h, "target_entrypoint", None)
+                    ),
                     target_sink=getattr(h, "sensitive_operation", getattr(h, "target_sink", None)),
                     target_file=getattr(h, "target_symbol", getattr(h, "target_file", "")),
                     category=getattr(h, "category", getattr(h, "rule_id", "general")),
@@ -273,7 +301,9 @@ class BaseInvestigationWorker(ABC):
         if not candidate_findings and executor.hypotheses:
             for h_id, hyp in executor.hypotheses.items():
                 if getattr(hyp, "disposition", "open") not in ("refuted", "rejected"):
-                    target_file = getattr(hyp, "target_file", "") or (self.packet.file_paths[0] if self.packet.file_paths else "unknown")
+                    target_file = getattr(hyp, "target_file", "") or (
+                        self.packet.file_paths[0] if self.packet.file_paths else "unknown"
+                    )
                     target_sym = getattr(hyp, "target_symbol", getattr(hyp, "entry_point", ""))
                     f_loc = SourceLocation(
                         file_path=target_file.replace("\\", "/"),

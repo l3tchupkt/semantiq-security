@@ -39,6 +39,30 @@ class HypothesisStatus(str, Enum):
     ABANDONED = "ABANDONED"
 
 
+VALID_HYPOTHESIS_TRANSITIONS: dict[HypothesisStatus, set[HypothesisStatus]] = {
+    HypothesisStatus.FORMED: {
+        HypothesisStatus.EVIDENCE_SEEKING,
+        HypothesisStatus.ABANDONED,
+    },
+    HypothesisStatus.EVIDENCE_SEEKING: {
+        HypothesisStatus.ADVERSARIALLY_CHALLENGED,
+        HypothesisStatus.INSUFFICIENT_EVIDENCE,
+        HypothesisStatus.ABANDONED,
+    },
+    HypothesisStatus.ADVERSARIALLY_CHALLENGED: {
+        HypothesisStatus.CONFIRMED_VULNERABILITY,
+        HypothesisStatus.REFUTED_BY_DEFENSE,
+        HypothesisStatus.INSUFFICIENT_EVIDENCE,
+        HypothesisStatus.ABANDONED,
+    },
+    # Terminal states: no transitions back to active exploration
+    HypothesisStatus.CONFIRMED_VULNERABILITY: set(),
+    HypothesisStatus.REFUTED_BY_DEFENSE: set(),
+    HypothesisStatus.INSUFFICIENT_EVIDENCE: set(),
+    HypothesisStatus.ABANDONED: set(),
+}
+
+
 class DeepVulnerabilityClass(str, Enum):
     """The 5 primary vulnerability classes prioritized in autonomous discovery."""
 
@@ -92,10 +116,10 @@ class SecurityHypothesis(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
 
     # Multi-factor scoring components (0.0 to 100.0)
-    impact_score: float = 50.0
-    reachability_score: float = 50.0
-    novelty_score: float = 80.0
-    uncertainty_score: float = 90.0
+    impact_score: float = Field(default=50.0, ge=0.0, le=100.0)
+    reachability_score: float = Field(default=50.0, ge=0.0, le=100.0)
+    novelty_score: float = Field(default=80.0, ge=0.0, le=100.0)
+    uncertainty_score: float = Field(default=90.0, ge=0.0, le=100.0)
 
     supporting_evidence: list[CodeEvidence] = Field(default_factory=list)
     counterevidence: list[str] = Field(default_factory=list)
@@ -115,11 +139,17 @@ class SecurityHypothesis(BaseModel):
         Score = (Impact * 0.40) + (Reachability * 0.30) + (Novelty * 0.20) + (Uncertainty * 0.10)
         """
         # Active hypotheses have full value; resolved ones lose discovery priority
-        terminal_multiplier = 0.05 if self.status in {
-            HypothesisStatus.CONFIRMED_VULNERABILITY,
-            HypothesisStatus.REFUTED_BY_DEFENSE,
-            HypothesisStatus.ABANDONED,
-        } else 1.0
+        terminal_multiplier = (
+            0.05
+            if self.status
+            in {
+                HypothesisStatus.CONFIRMED_VULNERABILITY,
+                HypothesisStatus.REFUTED_BY_DEFENSE,
+                HypothesisStatus.ABANDONED,
+                HypothesisStatus.INSUFFICIENT_EVIDENCE,
+            }
+            else 1.0
+        )
 
         raw_score = (
             (self.impact_score * 0.40)
@@ -154,12 +184,14 @@ class HypothesisManager:
 
         # Record initial state transition
         if not hypothesis.state_transitions:
-            hypothesis.state_transitions.append({
-                "from_status": None,
-                "to_status": hypothesis.status.value,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "reason": "Hypothesis formulated from initial threat model / attack surface discovery",
-            })
+            hypothesis.state_transitions.append(
+                {
+                    "from_status": None,
+                    "to_status": hypothesis.status.value,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "reason": "Hypothesis formulated from initial threat model / attack surface discovery",
+                }
+            )
 
         self.hypotheses[hypothesis.hypothesis_id] = hypothesis
         if hypothesis.target_symbol:
@@ -190,6 +222,7 @@ class HypothesisManager:
         new_status: HypothesisStatus,
         reason: str,
         metadata: dict[str, Any] | None = None,
+        force: bool = False,
     ) -> SecurityHypothesis:
         """Execute a valid lifecycle state transition with audit log."""
         hyp = self.hypotheses.get(hypothesis_id)
@@ -197,11 +230,21 @@ class HypothesisManager:
             raise KeyError(f"Hypothesis {hypothesis_id} not found.")
 
         old_status = hyp.status
+        allowed = VALID_HYPOTHESIS_TRANSITIONS.get(old_status, set())
+        if not force and new_status not in allowed:
+            raise ValueError(
+                f"Invalid hypothesis state transition for {hypothesis_id}: "
+                f"cannot transition from {old_status.value} to {new_status.value}."
+            )
+
         hyp.status = new_status
         hyp.updated_at = datetime.now(timezone.utc).isoformat()
 
         # Update uncertainty score based on transition
-        if new_status in {HypothesisStatus.CONFIRMED_VULNERABILITY, HypothesisStatus.REFUTED_BY_DEFENSE}:
+        if new_status in {
+            HypothesisStatus.CONFIRMED_VULNERABILITY,
+            HypothesisStatus.REFUTED_BY_DEFENSE,
+        }:
             hyp.uncertainty_score = 0.0
         elif new_status == HypothesisStatus.ADVERSARIALLY_CHALLENGED:
             hyp.uncertainty_score = max(20.0, hyp.uncertainty_score - 30.0)
@@ -278,7 +321,9 @@ class HypothesisManager:
     def record_action(self, hypothesis_id: str, action: InvestigativeAction) -> None:
         """Record an investigative action taken towards resolving a hypothesis."""
         hyp = self.hypotheses.get(hypothesis_id)
-        action_with_id = action.model_copy(update={"action_id": action.ensure_id(), "target_hypothesis_id": hypothesis_id})
+        action_with_id = action.model_copy(
+            update={"action_id": action.ensure_id(), "target_hypothesis_id": hypothesis_id}
+        )
         self.action_log.append(action_with_id)
         if hyp:
             hyp.action_history.append(action_with_id)
@@ -299,7 +344,11 @@ class HypothesisManager:
             if hyp.entry_point and not hyp.supporting_evidence:
                 return (
                     "semantiq_query_dataflow_path",
-                    {"source_symbol": hyp.entry_point, "sink_category": hyp.category.value, "max_depth": 8},
+                    {
+                        "source_symbol": hyp.entry_point,
+                        "sink_category": hyp.category.value,
+                        "max_depth": 8,
+                    },
                     f"Tracing reachability and dataflow from entrypoint '{hyp.entry_point}' to sink '{hyp.sensitive_sink}'.",
                 )
             if hyp.target_symbol:
@@ -317,7 +366,9 @@ class HypothesisManager:
         # Case 2: In Evidence Seeking state -> Trace arguments, callers, and sensitive operations
         if hyp.status == HypothesisStatus.EVIDENCE_SEEKING:
             # Check if we need interprocedural propagation evidence
-            has_propagation = any(getattr(e, "role", "") == "propagation" for e in hyp.supporting_evidence)
+            has_propagation = any(
+                getattr(e, "role", "") == "propagation" for e in hyp.supporting_evidence
+            )
             if not has_propagation and hyp.target_symbol:
                 return (
                     "semantiq_query_dataflow_path",
@@ -366,9 +417,7 @@ class HypothesisManager:
 
         active_count = sum(1 for h in self.hypotheses.values() if h.is_active())
         avg_uncertainty = (
-            sum(h.uncertainty_score for h in self.hypotheses.values()) / total
-            if total > 0
-            else 0.0
+            sum(h.uncertainty_score for h in self.hypotheses.values()) / total if total > 0 else 0.0
         )
 
         top_hyps = [
@@ -394,4 +443,3 @@ class HypothesisManager:
             "total_actions_recorded": len(self.action_log),
             "top_hypotheses": top_hyps,
         }
-

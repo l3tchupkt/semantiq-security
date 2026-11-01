@@ -151,14 +151,61 @@ def test_information_value_ranking_formula(hypothesis_manager: HypothesisManager
     assert ranked[1].hypothesis_id == "h2"
 
     # Verify terminal multiplier dampening: confirmed hypotheses should drop in ranking
+    hypothesis_manager.transition_state("h1", HypothesisStatus.EVIDENCE_SEEKING, "seeking")
     hypothesis_manager.transition_state(
-        "h1",
-        HypothesisStatus.CONFIRMED_VULNERABILITY,
-        "Confirmed",
+        "h1", HypothesisStatus.ADVERSARIALLY_CHALLENGED, "challenged"
     )
+    hypothesis_manager.transition_state("h1", HypothesisStatus.CONFIRMED_VULNERABILITY, "confirmed")
     ranked_after = hypothesis_manager.rank_hypotheses()
     # Terminal multiplier (0.05) drops h1 from 80.0 down to ~4.0
     assert ranked_after[0].hypothesis_id == "h2"
+
+
+def test_invalid_lifecycle_transitions(
+    hypothesis_manager: HypothesisManager,
+    sample_hypothesis: SecurityHypothesis,
+) -> None:
+    """Verify that invalid state transitions and re-opening terminal states raise ValueError."""
+    hyp_id = hypothesis_manager.add_hypothesis(sample_hypothesis)
+
+    # 1. Cannot transition directly from FORMED to CONFIRMED_VULNERABILITY
+    with pytest.raises(
+        ValueError, match="cannot transition from FORMED to CONFIRMED_VULNERABILITY"
+    ):
+        hypothesis_manager.transition_state(
+            hyp_id, HypothesisStatus.CONFIRMED_VULNERABILITY, "Premature confirmation"
+        )
+
+    # 2. Advance to terminal state
+    hypothesis_manager.transition_state(hyp_id, HypothesisStatus.EVIDENCE_SEEKING, "seeking")
+    hypothesis_manager.transition_state(
+        hyp_id, HypothesisStatus.ADVERSARIALLY_CHALLENGED, "challenged"
+    )
+    hypothesis_manager.transition_state(
+        hyp_id, HypothesisStatus.CONFIRMED_VULNERABILITY, "confirmed"
+    )
+
+    # 3. Terminal state cannot transition back to active state
+    with pytest.raises(
+        ValueError, match="cannot transition from CONFIRMED_VULNERABILITY to EVIDENCE_SEEKING"
+    ):
+        hypothesis_manager.transition_state(
+            hyp_id, HypothesisStatus.EVIDENCE_SEEKING, "Illegal re-open"
+        )
+
+
+def test_empty_repository_handling(tmp_path: Path) -> None:
+    """Verify autonomous discovery handles empty repositories gracefully."""
+    empty_dir = tmp_path / "empty_repo"
+    empty_dir.mkdir()
+
+    engine = AutonomousDiscoveryEngine(repository_root=empty_dir)
+    output = engine.run_autonomous_investigation([])
+
+    assert output.stopping_reason == "no_python_files_found"
+    assert len(output.findings) == 0
+    assert len(output.hypotheses) == 0
+    assert output.coverage_metrics["total_python_files"] == 0
 
 
 # =============================================================================
@@ -323,7 +370,9 @@ def safe_file_read(base_dir, user_path):
 
     # Vulnerable endpoint should produce a confirmed finding
     confirmed_titles = [f.title for f in output.findings]
-    assert any("Command Injection" in t or "insecure_exec" in t or "Popen" in t for t in confirmed_titles)
+    assert any(
+        "Command Injection" in t or "insecure_exec" in t or "Popen" in t for t in confirmed_titles
+    )
 
     # Check finding contract
     finding = output.findings[0]
@@ -334,6 +383,9 @@ def safe_file_read(base_dir, user_path):
     assert "semantic_identity" in finding.metadata
 
     # Check stopping metrics
-    assert output.stopping_reason in {"completed_all_hypotheses", "all_hypotheses_resolved", "information_saturation_reached"}
+    assert output.stopping_reason in {
+        "completed_all_hypotheses",
+        "all_hypotheses_resolved",
+        "information_saturation_reached",
+    }
     assert output.resource_metrics["investigation_turns_executed"] >= 1
-

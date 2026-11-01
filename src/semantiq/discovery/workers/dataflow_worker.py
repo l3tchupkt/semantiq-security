@@ -46,9 +46,15 @@ class DataflowWorker(BaseInvestigationWorker):
         )
 
     def build_initial_prompt(self, context: InvestigationContext) -> str:
-        entrypoints_str = ", ".join(self.packet.entrypoint_ids) if self.packet.entrypoint_ids else "(none specified)"
+        entrypoints_str = (
+            ", ".join(self.packet.entrypoint_ids)
+            if self.packet.entrypoint_ids
+            else "(none specified)"
+        )
         sinks_str = ", ".join(self.packet.sink_ids) if self.packet.sink_ids else "(none specified)"
-        symbols_str = ", ".join(self.packet.target_symbols) if self.packet.target_symbols else "(all)"
+        symbols_str = (
+            ", ".join(self.packet.target_symbols) if self.packet.target_symbols else "(all)"
+        )
 
         return (
             f"Begin Dataflow tracing for Packet: '{self.packet.title}' (ID: {self.packet.packet_id}).\n"
@@ -60,4 +66,3 @@ class DataflowWorker(BaseInvestigationWorker):
             "Trace argument propagation from the entrypoint into the callee functions and sinks. "
             "Identify whether user input reaches the sink with or without sanitization."
         )
-

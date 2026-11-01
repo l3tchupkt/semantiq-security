@@ -32,6 +32,9 @@ class GroundTruthVulnerability:
     sink_operation: str
     root_cause: str
     expected_severity: SeverityLevel
+    is_mitigated: bool = False
+    prerequisites: list[str] = field(default_factory=list)
+    notes: str = ""
 
 
 @dataclass
@@ -69,6 +72,8 @@ DATASET_REGISTRY: dict[str, TargetRepositorySpec] = {
                 sink_operation="subprocess.Popen",
                 root_cause="Unescaped shell argument concatenation during command dispatch",
                 expected_severity=SeverityLevel.CRITICAL,
+                prerequisites=["Direct network access to Bottle web server on port 8080"],
+                notes="Verified ground truth: raw command string passed into subprocess without sanitization.",
             ),
             GroundTruthVulnerability(
                 vuln_id="GT-AIT-02",
@@ -81,6 +86,8 @@ DATASET_REGISTRY: dict[str, TargetRepositorySpec] = {
                 sink_operation="bg_exec_seq",
                 root_cause="Direct execution of user-specified script path in background process",
                 expected_severity=SeverityLevel.HIGH,
+                prerequisites=["Direct network access to PUT /script/run endpoint"],
+                notes="Verified ground truth: bg_exec_seq spawns subprocess with attacker-controlled path.",
             ),
             GroundTruthVulnerability(
                 vuln_id="GT-AIT-03",
@@ -93,18 +100,27 @@ DATASET_REGISTRY: dict[str, TargetRepositorySpec] = {
                 sink_operation="id(self)",
                 root_cause="Session identifier leaks internal Python object heap address",
                 expected_severity=SeverityLevel.HIGH,
+                prerequisites=[
+                    "Ability to observe consecutive session IDs to calculate heap addresses"
+                ],
+                notes="Verified ground truth: Session.id uses id(self) which is the object heap memory address.",
             ),
             GroundTruthVulnerability(
                 vuln_id="GT-AIT-04",
-                title="Arbitrary Path Traversal in Static File Serving",
+                title="Arbitrary Path Traversal in Static File Serving (Mitigated Control)",
                 category=VulnerabilityCategory.PATH_TRAVERSAL,
                 vuln_class=DeepVulnerabilityClass.FILE_RESOURCE_HANDLING,
                 cwe_ids=["CWE-22"],
                 target_symbol="handle_scripts_load",
                 file_path="ait/gui/__init__.py",
                 sink_operation="os.path.join",
-                root_cause="File path concatenation lacking root directory containment enforcement",
+                root_cause="File path concatenation protected by is_relative_to containment guard",
                 expected_severity=SeverityLevel.HIGH,
+                is_mitigated=True,
+                prerequisites=[
+                    "Bypass of pathlib.Path.is_relative_to or symlink attack to escape safe_root"
+                ],
+                notes="NEGATIVE CONTROL: ait/gui/__init__.py lines 1207-1210 and 1236-1239 enforce is_relative_to(safe_root) and abort with HTTP 400. Not exploitable in baseline code.",
             ),
         ],
     ),
@@ -128,6 +144,10 @@ DATASET_REGISTRY: dict[str, TargetRepositorySpec] = {
                 sink_operation="exec(code, module.__dict__)",
                 root_cause="Dynamically executes Python source code from user-controlled plugin directory at import time",
                 expected_severity=SeverityLevel.HIGH,
+                prerequisites=[
+                    "Attacker must have write access to pyload userdir/plugins/ or upload arbitrary plugin files"
+                ],
+                notes="Verified ground truth: exec(code, module.__dict__) called on all plugin source files.",
             ),
             GroundTruthVulnerability(
                 vuln_id="GT-PYLOAD-02",
@@ -140,6 +160,10 @@ DATASET_REGISTRY: dict[str, TargetRepositorySpec] = {
                 sink_operation="extract",
                 root_cause="Extraction path check fails to prevent symlink traversal to outside directory",
                 expected_severity=SeverityLevel.HIGH,
+                prerequisites=[
+                    "POSIX operating system supporting symlink creation; Windows extraction fails with WinError 183"
+                ],
+                notes="Verified ground truth: safe_extractall checks target paths but does not resolve intermediate symlink targets on POSIX.",
             ),
             GroundTruthVulnerability(
                 vuln_id="GT-PYLOAD-03",
@@ -152,6 +176,10 @@ DATASET_REGISTRY: dict[str, TargetRepositorySpec] = {
                 sink_operation="endpoint_dispatch",
                 root_cause="Web routes permit unauthenticated interaction with download management state",
                 expected_severity=SeverityLevel.MEDIUM,
+                prerequisites=[
+                    "pyload web server enabled and accessible to network without fronting auth proxy"
+                ],
+                notes="Verified ground truth: json_blueprint endpoints lack mandatory session authentication decorators.",
             ),
         ],
     ),
@@ -175,6 +203,10 @@ DATASET_REGISTRY: dict[str, TargetRepositorySpec] = {
                 sink_operation="subprocess.Popen",
                 root_cause="Protocol handling allows ext:: remote URLs to execute shell commands during clone/fetch",
                 expected_severity=SeverityLevel.CRITICAL,
+                prerequisites=[
+                    "Git configuration allows protocol ext:: (e.g. protocol.ext.allow=always; disabled by default in modern Git >= 2.38.1)"
+                ],
+                notes="Verified ground truth: ext:: URLs passed directly to git subprocess invoke external shell helpers.",
             ),
             GroundTruthVulnerability(
                 vuln_id="GT-GIT-02",
@@ -187,8 +219,11 @@ DATASET_REGISTRY: dict[str, TargetRepositorySpec] = {
                 sink_operation="subprocess.Popen",
                 root_cause="Git command invocation passes unquoted CLI flags or option parameters",
                 expected_severity=SeverityLevel.HIGH,
+                prerequisites=[
+                    "Application passes untrusted user parameters into Git.execute without option prefix '--' neutralization"
+                ],
+                notes="Verified ground truth: Git.execute passes args list to subprocess without neutralizing option prefixes like --upload-pack.",
             ),
         ],
     ),
 }
-

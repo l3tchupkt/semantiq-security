@@ -46,8 +46,12 @@ class AdversarialVerificationWorker(BaseInvestigationWorker):
         )
 
     def build_initial_prompt(self, context: InvestigationContext) -> str:
-        candidate_summary = self.packet.metadata.get("candidate_summary", "Review all candidate findings in this packet.")
-        symbols_str = ", ".join(self.packet.target_symbols) if self.packet.target_symbols else "(all)"
+        candidate_summary = self.packet.metadata.get(
+            "candidate_summary", "Review all candidate findings in this packet."
+        )
+        symbols_str = (
+            ", ".join(self.packet.target_symbols) if self.packet.target_symbols else "(all)"
+        )
 
         return (
             f"Begin Adversarial Verification for Packet: '{self.packet.title}' (ID: {self.packet.packet_id}).\n"
@@ -58,4 +62,3 @@ class AdversarialVerificationWorker(BaseInvestigationWorker):
             "Inspect the code for sanitizers, defensive checks, and deployment bounds. "
             "Record any unresolved proof obligations with record_proof_gap."
         )
-

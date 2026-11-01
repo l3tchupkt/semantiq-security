@@ -11,9 +11,9 @@
           "rules": [
             {
               "id": "SEMANTIQ-AUTHORIZATION_ACCESS_CONTROL",
-              "name": "Unauthenticated Access to Endpoint 'Route: /cmd/dict'",
+              "name": "Unauthenticated Access to Endpoint 'Route: /prompt'",
               "shortDescription": {
-                "text": "Unauthenticated Access to Endpoint 'Route: /cmd/dict'"
+                "text": "Unauthenticated Access to Endpoint 'Route: /prompt'"
               },
               "fullDescription": {
                 "text": "An unauthenticated remote attacker invokes privileged application functionality without proper credential verification."
@@ -130,7 +130,7 @@
             }
           ],
           "fingerprints": {
-            "primary": "7c7392807302b7df2c50580c"
+            "primary": "b02fcd91fdb07ac858d3ea9b"
           },
           "properties": {
             "lifecycle_state": "confirmed",
@@ -141,7 +141,7 @@
           "codeFlows": [
             {
               "message": {
-                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /cmd/dict'"
+                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /prompt'"
               },
               "threadFlows": [
                 {
@@ -173,7 +173,7 @@
                       "importance": "essential",
                       "location": {
                         "message": {
-                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /cmd/dict"
+                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /prompt"
                         },
                         "physicalLocation": {
                           "artifactLocation": {
@@ -184,7 +184,7 @@
                             "startLine": 1,
                             "endLine": 1,
                             "snippet": {
-                              "text": "# Entrypoint handler for Route: /cmd/dict"
+                              "text": "# Entrypoint handler for Route: /prompt"
                             }
                           }
                         }
@@ -225,7 +225,7 @@
                 }
               },
               "message": {
-                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /cmd/dict"
+                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /prompt"
               }
             }
           ]
@@ -251,7 +251,7 @@
             }
           ],
           "fingerprints": {
-            "primary": "b4be945997ecefe4d1bef534"
+            "primary": "4f0c26f7e23af27ef2f83029"
           },
           "properties": {
             "lifecycle_state": "confirmed",
@@ -262,7 +262,7 @@
           "codeFlows": [
             {
               "message": {
-                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /'"
+                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /script/pause'"
               },
               "threadFlows": [
                 {
@@ -294,7 +294,7 @@
                       "importance": "essential",
                       "location": {
                         "message": {
-                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /"
+                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /script/pause"
                         },
                         "physicalLocation": {
                           "artifactLocation": {
@@ -305,7 +305,7 @@
                             "startLine": 1,
                             "endLine": 1,
                             "snippet": {
-                              "text": "# Entrypoint handler for Route: /"
+                              "text": "# Entrypoint handler for Route: /script/pause"
                             }
                           }
                         }
@@ -346,7 +346,7 @@
                 }
               },
               "message": {
-                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /"
+                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /script/pause"
               }
             }
           ]
@@ -372,7 +372,7 @@
             }
           ],
           "fingerprints": {
-            "primary": "9f415cd1fae7a55dd9511062"
+            "primary": "4708851ca3b1414511b1e1ae"
           },
           "properties": {
             "lifecycle_state": "confirmed",
@@ -383,7 +383,7 @@
           "codeFlows": [
             {
               "message": {
-                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /tlm/dict'"
+                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /leapseconds'"
               },
               "threadFlows": [
                 {
@@ -415,7 +415,7 @@
                       "importance": "essential",
                       "location": {
                         "message": {
-                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /tlm/dict"
+                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /leapseconds"
                         },
                         "physicalLocation": {
                           "artifactLocation": {
@@ -426,7 +426,7 @@
                             "startLine": 1,
                             "endLine": 1,
                             "snippet": {
-                              "text": "# Entrypoint handler for Route: /tlm/dict"
+                              "text": "# Entrypoint handler for Route: /leapseconds"
                             }
                           }
                         }
@@ -467,7 +467,7 @@
                 }
               },
               "message": {
-                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /tlm/dict"
+                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /leapseconds"
               }
             }
           ]
@@ -1087,127 +1087,6 @@
             {
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "src/pyload/webui/app/blueprints/json_blueprint.py",
-                  "uriBaseId": "%SRCROOT%"
-                },
-                "region": {
-                  "startLine": 1,
-                  "endLine": 6
-                }
-              }
-            }
-          ],
-          "fingerprints": {
-            "primary": "c80feb1a6fc01690f5c365ae"
-          },
-          "properties": {
-            "lifecycle_state": "confirmed",
-            "evidence_count": 2,
-            "proof_gap_count": 0,
-            "proof_gaps": []
-          },
-          "codeFlows": [
-            {
-              "message": {
-                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /json/package_order'"
-              },
-              "threadFlows": [
-                {
-                  "locations": [
-                    {
-                      "step": 1,
-                      "importance": "important",
-                      "location": {
-                        "message": {
-                          "text": "[SINK] Sink operation 'endpoint_dispatch' executing in src/pyload/webui/app/blueprints/json_blueprint.py"
-                        },
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "src/pyload/webui/app/blueprints/json_blueprint.py",
-                            "uriBaseId": "%SRCROOT%"
-                          },
-                          "region": {
-                            "startLine": 1,
-                            "endLine": 16,
-                            "snippet": {
-                              "text": "import os\nimport sys\nfrom functools import wraps\n\nimport flask\nfrom flask.json import jsonify\nfrom werkzeug.utils import secure_filename\n\nfrom pyload.core.api import Role\nfrom pyload.core.utils import format, fs\n\nfrom ..helpers import clear_all_user_sessions, get_permission, login_required, permlist, render_template, set_permission\n\nbp = flask.Blueprint(\"json\", __name__)\n\n"
-                            }
-                          }
-                        }
-                      }
-                    },
-                    {
-                      "step": 2,
-                      "importance": "essential",
-                      "location": {
-                        "message": {
-                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /json/package_order"
-                        },
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "src/pyload/webui/app/blueprints/json_blueprint.py",
-                            "uriBaseId": "%SRCROOT%"
-                          },
-                          "region": {
-                            "startLine": 1,
-                            "endLine": 1,
-                            "snippet": {
-                              "text": "# Entrypoint handler for Route: /json/package_order"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
-              ]
-            }
-          ],
-          "relatedLocations": [
-            {
-              "id": 1,
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "src/pyload/webui/app/blueprints/json_blueprint.py",
-                  "uriBaseId": "%SRCROOT%"
-                },
-                "region": {
-                  "startLine": 1,
-                  "endLine": 16
-                }
-              },
-              "message": {
-                "text": "[CodeEvidenceRole.SINK] Sink operation 'endpoint_dispatch' executing in src/pyload/webui/app/blueprints/json_blueprint.py"
-              }
-            },
-            {
-              "id": 2,
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "src/pyload/webui/app/blueprints/json_blueprint.py",
-                  "uriBaseId": "%SRCROOT%"
-                },
-                "region": {
-                  "startLine": 1,
-                  "endLine": 1
-                }
-              },
-              "message": {
-                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /json/package_order"
-              }
-            }
-          ]
-        },
-        {
-          "ruleId": "SEMANTIQ-AUTHORIZATION_ACCESS_CONTROL",
-          "message": {
-            "text": "An unauthenticated remote attacker invokes privileged application functionality without proper credential verification."
-          },
-          "level": "error",
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
                   "uri": "src/pyload/core/api/__init__.py",
                   "uriBaseId": "%SRCROOT%"
                 },
@@ -1219,7 +1098,7 @@
             }
           ],
           "fingerprints": {
-            "primary": "6a71208784ab2d15332b99ef"
+            "primary": "c2d19b9b6288a340609b272a"
           },
           "properties": {
             "lifecycle_state": "confirmed",
@@ -1230,7 +1109,7 @@
           "codeFlows": [
             {
               "message": {
-                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /restart'"
+                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /is_time_reconnect'"
               },
               "threadFlows": [
                 {
@@ -1262,7 +1141,7 @@
                       "importance": "essential",
                       "location": {
                         "message": {
-                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /restart"
+                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /is_time_reconnect"
                         },
                         "physicalLocation": {
                           "artifactLocation": {
@@ -1273,7 +1152,7 @@
                             "startLine": 1,
                             "endLine": 1,
                             "snippet": {
-                              "text": "# Entrypoint handler for Route: /restart"
+                              "text": "# Entrypoint handler for Route: /is_time_reconnect"
                             }
                           }
                         }
@@ -1314,7 +1193,7 @@
                 }
               },
               "message": {
-                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /restart"
+                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /is_time_reconnect"
               }
             }
           ]
@@ -1329,7 +1208,7 @@
             {
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "src/pyload/webui/app/blueprints/app_blueprint.py",
+                  "uri": "src/pyload/core/api/__init__.py",
                   "uriBaseId": "%SRCROOT%"
                 },
                 "region": {
@@ -1340,7 +1219,7 @@
             }
           ],
           "fingerprints": {
-            "primary": "6d6a60de584eba26ed62c049"
+            "primary": "7f639e4d8db3ac9c026fd46d"
           },
           "properties": {
             "lifecycle_state": "confirmed",
@@ -1351,7 +1230,7 @@
           "codeFlows": [
             {
               "message": {
-                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /files/get/<path:path>'"
+                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /check_urls'"
               },
               "threadFlows": [
                 {
@@ -1361,18 +1240,18 @@
                       "importance": "important",
                       "location": {
                         "message": {
-                          "text": "[SINK] Sink operation 'endpoint_dispatch' executing in src/pyload/webui/app/blueprints/app_blueprint.py"
+                          "text": "[SINK] Sink operation 'endpoint_dispatch' executing in src/pyload/core/api/__init__.py"
                         },
                         "physicalLocation": {
                           "artifactLocation": {
-                            "uri": "src/pyload/webui/app/blueprints/app_blueprint.py",
+                            "uri": "src/pyload/core/api/__init__.py",
                             "uriBaseId": "%SRCROOT%"
                           },
                           "region": {
                             "startLine": 1,
                             "endLine": 16,
                             "snippet": {
-                              "text": "import datetime\nimport mimetypes\nimport operator\nimport os\nimport re\nimport sys\nimport time\nfrom logging import getLogger\nfrom urllib.parse import unquote\n\nimport flask\n\nfrom pyload import APPID, PKGDIR\nfrom pyload.core.utils import format, fs\n\nfrom ..helpers import ("
+                              "text": "#       ____________\n#   ___/       |    \\_____________ _                 _ ___\n#  /        ___/    |    _ __ _  _| |   ___  __ _ __| |   \\\n# /    \\___/  ______/   | '_ \\ || | |__/ _ \\/ _` / _` |    \\\n# \\            \u25ef |      | .__/\\_, |____\\___/\\__,_\\__,_|    /\n#  \\_______\\    /_______|_|   |__/________________________/\n#           \\  /\n#            \\/\n\nimport os\nimport re\nimport secrets\nimport time\nfrom enum import IntFlag\nfrom threading import RLock\nfrom typing import Any, Callable, Optional"
                             }
                           }
                         }
@@ -1383,18 +1262,18 @@
                       "importance": "essential",
                       "location": {
                         "message": {
-                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /files/get/<path:path>"
+                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /check_urls"
                         },
                         "physicalLocation": {
                           "artifactLocation": {
-                            "uri": "src/pyload/webui/app/blueprints/app_blueprint.py",
+                            "uri": "src/pyload/core/api/__init__.py",
                             "uriBaseId": "%SRCROOT%"
                           },
                           "region": {
                             "startLine": 1,
                             "endLine": 1,
                             "snippet": {
-                              "text": "# Entrypoint handler for Route: /files/get/<path:path>"
+                              "text": "# Entrypoint handler for Route: /check_urls"
                             }
                           }
                         }
@@ -1410,7 +1289,7 @@
               "id": 1,
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "src/pyload/webui/app/blueprints/app_blueprint.py",
+                  "uri": "src/pyload/core/api/__init__.py",
                   "uriBaseId": "%SRCROOT%"
                 },
                 "region": {
@@ -1419,14 +1298,14 @@
                 }
               },
               "message": {
-                "text": "[CodeEvidenceRole.SINK] Sink operation 'endpoint_dispatch' executing in src/pyload/webui/app/blueprints/app_blueprint.py"
+                "text": "[CodeEvidenceRole.SINK] Sink operation 'endpoint_dispatch' executing in src/pyload/core/api/__init__.py"
               }
             },
             {
               "id": 2,
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "src/pyload/webui/app/blueprints/app_blueprint.py",
+                  "uri": "src/pyload/core/api/__init__.py",
                   "uriBaseId": "%SRCROOT%"
                 },
                 "region": {
@@ -1435,7 +1314,128 @@
                 }
               },
               "message": {
-                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /files/get/<path:path>"
+                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /check_urls"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "SEMANTIQ-AUTHORIZATION_ACCESS_CONTROL",
+          "message": {
+            "text": "An unauthenticated remote attacker invokes privileged application functionality without proper credential verification."
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/pyload/core/api/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 1,
+                  "endLine": 6
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "primary": "d73e527764c59738f83d8827"
+          },
+          "properties": {
+            "lifecycle_state": "confirmed",
+            "evidence_count": 2,
+            "proof_gap_count": 0,
+            "proof_gaps": []
+          },
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Causal execution trace for Unauthenticated Access to Endpoint 'Route: /change_password'"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "step": 1,
+                      "importance": "important",
+                      "location": {
+                        "message": {
+                          "text": "[SINK] Sink operation 'endpoint_dispatch' executing in src/pyload/core/api/__init__.py"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "src/pyload/core/api/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "startLine": 1,
+                            "endLine": 16,
+                            "snippet": {
+                              "text": "#       ____________\n#   ___/       |    \\_____________ _                 _ ___\n#  /        ___/    |    _ __ _  _| |   ___  __ _ __| |   \\\n# /    \\___/  ______/   | '_ \\ || | |__/ _ \\/ _` / _` |    \\\n# \\            \u25ef |      | .__/\\_, |____\\___/\\__,_\\__,_|    /\n#  \\_______\\    /_______|_|   |__/________________________/\n#           \\  /\n#            \\/\n\nimport os\nimport re\nimport secrets\nimport time\nfrom enum import IntFlag\nfrom threading import RLock\nfrom typing import Any, Callable, Optional"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "step": 2,
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[ENTRYPOINT] Entrypoint leading to Route: /change_password"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "src/pyload/core/api/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "startLine": 1,
+                            "endLine": 1,
+                            "snippet": {
+                              "text": "# Entrypoint handler for Route: /change_password"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "relatedLocations": [
+            {
+              "id": 1,
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/pyload/core/api/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 1,
+                  "endLine": 16
+                }
+              },
+              "message": {
+                "text": "[CodeEvidenceRole.SINK] Sink operation 'endpoint_dispatch' executing in src/pyload/core/api/__init__.py"
+              }
+            },
+            {
+              "id": 2,
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/pyload/core/api/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 1,
+                  "endLine": 1
+                }
+              },
+              "message": {
+                "text": "[CodeEvidenceRole.ENTRYPOINT] Entrypoint leading to Route: /change_password"
               }
             }
           ]

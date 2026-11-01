@@ -45,10 +45,18 @@ class DiscoveryWorker(BaseInvestigationWorker):
         )
 
     def build_initial_prompt(self, context: InvestigationContext) -> str:
-        entrypoints_str = ", ".join(self.packet.entrypoint_ids) if self.packet.entrypoint_ids else "(none specified)"
+        entrypoints_str = (
+            ", ".join(self.packet.entrypoint_ids)
+            if self.packet.entrypoint_ids
+            else "(none specified)"
+        )
         sinks_str = ", ".join(self.packet.sink_ids) if self.packet.sink_ids else "(none specified)"
-        symbols_str = ", ".join(self.packet.target_symbols) if self.packet.target_symbols else "(all)"
-        files_str = ", ".join(self.packet.file_paths) if self.packet.file_paths else "(all repo files)"
+        symbols_str = (
+            ", ".join(self.packet.target_symbols) if self.packet.target_symbols else "(all)"
+        )
+        files_str = (
+            ", ".join(self.packet.file_paths) if self.packet.file_paths else "(all repo files)"
+        )
 
         return (
             f"Begin Discovery investigation for Packet: '{self.packet.title}' (ID: {self.packet.packet_id}).\n"
@@ -61,4 +69,3 @@ class DiscoveryWorker(BaseInvestigationWorker):
             f"Files in Scope: {files_str}\n\n"
             "Explore these entrypoints and sinks using your discovery tools. Form hypotheses and submit candidate findings."
         )
-

@@ -200,3 +200,42 @@ semantiq-security/
    - Any ground truth in unparsed/skipped files must be strictly counted as False Negatives, or the benchmark run flagged as INCOMPLETE.
 5. **Multi-Factor Explainable Prioritization**:
    - Findings must provide explainable composite prioritization scores combining Impact, Reachability, Attacker Control, and Uncertainty penalties.
+
+---
+
+## 9. Mandatory Phase Closure Procedure
+
+Every development and research phase in Semantiq Security must strictly execute and pass the following 10-step closure checklist before completion and Git commit closure. No phase may be marked complete without executing this full checklist.
+
+1. **Git Ancestry & Clean Baseline Check**:
+   - Verify `git rev-parse HEAD`, active branch (`main`), and linear commit ancestry.
+   - Verify that previous milestones are fully committed and no uncommitted baseline diffs are unaccounted for.
+2. **Ground-Truth Validity Audit**:
+   - Independently inspect target source trees at pinned commits; verify whether claimed vulnerabilities are genuinely unmitigated vulnerabilities or mitigated negative controls.
+   - Document explicit attack prerequisites (e.g., protocol permissions, OS requirements, local access).
+3. **Implementation & Architecture Audit**:
+   - Perform source-level code review of all newly added or modified modules (not merely relying on passing tests).
+   - Verify state machine integrity, error boundaries, memory safety, and resource cleanup.
+4. **Code Cleanup & Optimization**:
+   - Eliminate dead code, unused imports, redundant conditionals, and performance bottlenecks.
+   - Enforce bounded numerical values and strict lifecycle transitions.
+5. **Defect Reproduction Tests**:
+   - Every defect identified during the audit must have a dedicated reproduction unit or regression test added to the test suite.
+6. **Honest Evaluation Rerun & Provider Transparency**:
+   - Rerun benchmarks under verified conditions.
+   - If AI provider API keys are absent, explicitly report AI-dependent metrics as `NOT_RUN` (deterministic engine evaluation only). Never fabricate or mock benchmark recall.
+7. **Full Quality Gates**:
+   - Full test suite passing (`pytest`).
+   - Zero linter violations (`ruff check .`).
+   - Zero formatter discrepancies (`ruff format --check .`).
+   - Zero type check errors in strict mode (`mypy src/semantiq`).
+8. **Artifact & Workbench Refresh**:
+   - Re-generate and persist all evaluation artifacts: OASIS SARIF 2.1.0 (`phaseX_findings.sarif`), SQLite Workbench (`workbench_phaseX.db`), and raw metrics JSON (`discovery_metrics.json`).
+   - Author a comprehensive closure audit report documenting all verification steps.
+9. **Exact Git Commit Closure**:
+   - Verify `git diff` and stage only intentional changes.
+   - Commit on branch `main` using authorized author identity (`letchupkt <letchu.geek@gmail.com>`) with a descriptive conventional commit message.
+   - Confirm clean working tree (`git status --short` returns empty).
+10. **Explicit Go / No-Go Sign-Off**:
+    - Provide an explicit recommendation on readiness to proceed to the next phase based strictly on audit findings and quality gate results.
+

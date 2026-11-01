@@ -46,8 +46,14 @@ class AuthorizationWorker(BaseInvestigationWorker):
         )
 
     def build_initial_prompt(self, context: InvestigationContext) -> str:
-        entrypoints_str = ", ".join(self.packet.entrypoint_ids) if self.packet.entrypoint_ids else "(none specified)"
-        symbols_str = ", ".join(self.packet.target_symbols) if self.packet.target_symbols else "(all)"
+        entrypoints_str = (
+            ", ".join(self.packet.entrypoint_ids)
+            if self.packet.entrypoint_ids
+            else "(none specified)"
+        )
+        symbols_str = (
+            ", ".join(self.packet.target_symbols) if self.packet.target_symbols else "(all)"
+        )
 
         return (
             f"Begin Authorization investigation for Packet: '{self.packet.title}' (ID: {self.packet.packet_id}).\n"
@@ -58,4 +64,3 @@ class AuthorizationWorker(BaseInvestigationWorker):
             "Audit access controls, session generation, and CSRF protection for these entrypoints. "
             "Determine if endpoints are unguarded, if session tokens are predictable, or if permissions can be bypassed."
         )
-

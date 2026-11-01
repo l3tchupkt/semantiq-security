@@ -232,4 +232,3 @@ class InvestigationContext:
     storage: SQLiteStorage
     run_id: str
     scan_id: str
-
