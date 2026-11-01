@@ -109,7 +109,7 @@ class InvestigationCoordinator:
         routes = graph.find_nodes(kind=NodeKind.ROUTE)
         unresolved = graph.get_unresolved_dispatches()
 
-        def find_matching_symbols(keywords: list[str], fallback: list[str]) -> list[str]:
+        def find_matching_symbols(keywords: list[str]) -> list[str]:
             matched: list[str] = []
             for r in routes:
                 if any(kw in r.id.lower() or kw in r.label.lower() for kw in keywords) and r.label and r.label not in matched:
@@ -118,18 +118,22 @@ class InvestigationCoordinator:
                 for fn in graph.find_nodes(kind=NodeKind.FUNCTION):
                     if any(kw in fn.id.lower() or kw in fn.label.lower() for kw in keywords) and fn.label and fn.label not in matched:
                         matched.append(fn.label)
-            return matched[:6] if matched else fallback
+            if not matched:
+                with contextlib.suppress(Exception):
+                    for fn in graph.find_nodes(kind=NodeKind.FUNCTION):
+                        if fn.label and fn.label not in matched:
+                            matched.append(fn.label)
+            return matched[:6]
 
         def find_matching_files(keywords: list[str]) -> list[str]:
             matched = [f for f in py_files if any(kw in f.lower() for kw in keywords)]
             return matched if matched else py_files[:15]
 
         # 1. Packet: Command Dispatch & Process Execution Attack Surface
-        cmd_routes = [r.id for r in routes if any(kw in r.id.lower() for kw in ["cmd", "script", "seq", "run", "exec", "process", "shell", "api"])]
-        cmd_files = find_matching_files(["gui", "server", "cmd", "exec", "process", "app", "dispatch", "run"])
+        cmd_routes = [r.id for r in routes if any(kw in r.id.lower() for kw in ["cmd", "script", "seq", "run", "exec", "process", "shell", "api", "cli", "dispatch"])]
+        cmd_files = find_matching_files(["gui", "server", "cmd", "exec", "process", "app", "dispatch", "run", "cli"])
         cmd_symbols = find_matching_symbols(
-            ["cmd", "script", "seq", "run", "exec", "process", "popen", "system", "send"],
-            ["handle_cmd", "handle_script_run_put", "handle_script_step_put", "bg_exec_seq", "send"],
+            ["cmd", "script", "seq", "run", "exec", "process", "popen", "system", "send", "call", "cli", "dispatch"],
         )
         packets.append(
             InvestigationPacket(
@@ -150,8 +154,7 @@ class InvestigationCoordinator:
         auth_routes = [r.id for r in routes if any(kw in r.id.lower() for kw in ["session", "auth", "login", "user", "token", "cred", "secret"])]
         auth_files = find_matching_files(["auth", "session", "user", "login", "security", "token", "cred"])
         auth_symbols = find_matching_symbols(
-            ["session", "token", "auth", "login", "id", "store", "origin", "csrf", "cred"],
-            ["Session", "SessionStore", "id", "_enforce_same_origin", "auth"],
+            ["session", "token", "auth", "login", "id", "store", "origin", "csrf", "cred", "user", "pass"],
         )
         packets.append(
             InvestigationPacket(
@@ -172,8 +175,7 @@ class InvestigationCoordinator:
         file_routes = [r.id for r in routes if any(kw in r.id.lower() for kw in ["static", "file", "load", "open", "read", "download", "path"])]
         file_files = find_matching_files(["static", "file", "load", "open", "download", "view", "server"])
         file_symbols = find_matching_symbols(
-            ["static", "file", "load", "open", "read", "path", "download"],
-            ["handle_static_files", "handle_root_files", "handle_scripts_load", "static_file"],
+            ["static", "file", "load", "open", "read", "path", "download", "render", "tar", "zip", "extract"],
         )
         packets.append(
             InvestigationPacket(

@@ -1,6 +1,18 @@
+from semantiq.discovery.adaptive_engine import (
+    AutonomousBudget,
+    AutonomousDiscoveryEngine,
+    AutonomousDiscoveryOutput,
+)
 from semantiq.discovery.ai_investigator import AIVulnerabilityInvestigator
 from semantiq.discovery.coordinator import CoordinatorRunResult, InvestigationCoordinator
 from semantiq.discovery.engine import VulnerabilityDiscoveryEngine
+from semantiq.discovery.hypothesis import (
+    DeepVulnerabilityClass,
+    HypothesisManager,
+    HypothesisStatus,
+    InvestigativeAction,
+    SecurityHypothesis,
+)
 from semantiq.discovery.investigation_tools import (
     INVESTIGATION_TOOLS,
     InvestigationToolExecutor,
@@ -28,10 +40,16 @@ __all__ = [
     "AIVulnerabilityInvestigator",
     "AdversarialVerificationWorker",
     "AuthorizationWorker",
+    "AutonomousBudget",
+    "AutonomousDiscoveryEngine",
+    "AutonomousDiscoveryOutput",
     "BaseInvestigationWorker",
     "CoordinatorRunResult",
     "DataflowWorker",
+    "DeepVulnerabilityClass",
     "DiscoveryWorker",
+    "HypothesisManager",
+    "HypothesisStatus",
     "INVESTIGATION_TOOLS",
     "InvestigationBudget",
     "InvestigationContext",
@@ -41,11 +59,13 @@ __all__ = [
     "InvestigationPacket",
     "InvestigationReducer",
     "InvestigationToolExecutor",
+    "InvestigativeAction",
     "LiveAIInvestigator",
     "PacketBudget",
     "PacketStatus",
     "ReducerDecision",
     "ReducerResult",
+    "SecurityHypothesis",
     "VulnerabilityDiscoveryEngine",
     "WorkerOutput",
     "WorkerRole",
