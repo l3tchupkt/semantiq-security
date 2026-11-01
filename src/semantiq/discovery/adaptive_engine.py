@@ -936,3 +936,59 @@ class AutonomousDiscoveryEngine:
             stopping_reason=stopping_reason,
             completed_at=datetime.now(timezone.utc).isoformat(),
         )
+
+    # =========================================================================
+    # Skill-Orchestrated Investigation Entrypoint (Phase 6)
+    # =========================================================================
+
+    def run_skill_orchestrated_investigation(
+        self,
+        py_files: list[str],
+        scan_id: str | None = None,
+    ) -> AutonomousDiscoveryOutput:
+        """Execute autonomous discovery driven by the specialized skill architecture."""
+        import uuid
+
+        from semantiq.discovery.coordinator import InvestigationCoordinator
+        from semantiq.skills import SkillInputContext
+
+        actual_scan_id = scan_id or f"autonomous_skill_scan_{uuid.uuid4().hex[:8]}"
+        coordinator = InvestigationCoordinator(
+            repository_root=self.repository_root,
+            storage=self.storage,
+            source_revision=self.source_revision,
+        )
+
+        ctx = SkillInputContext(
+            repository_root=self.repository_root,
+            target_files=py_files,
+        )
+
+        consolidated, outputs, reducer_res = coordinator.coordinate_skill_investigation(
+            context=ctx,
+            scan_id=actual_scan_id,
+        )
+
+        active = [f for f in consolidated if f.lifecycle_state != FindingLifecycleState.REJECTED]
+        rejected = [f for f in consolidated if f.lifecycle_state == FindingLifecycleState.REJECTED]
+
+        all_gaps = []
+        for f in active:
+            all_gaps.extend(f.proof_gaps)
+
+        return AutonomousDiscoveryOutput(
+            scan_id=actual_scan_id,
+            repository_path=str(self.repository_root),
+            target_revision=self.source_revision,
+            findings=active,
+            rejected_findings=rejected,
+            proof_gaps=all_gaps,
+            coverage_metrics={
+                "total_python_files": len(py_files),
+                "skills_executed_count": len(outputs),
+                "consolidated_count": len(consolidated),
+                "reducer_accepted_count": reducer_res.accepted_count,
+                "reducer_merged_count": reducer_res.merged_count,
+            },
+            stopping_reason="skills_execution_complete",
+        )

@@ -88,12 +88,19 @@ class InvestigationCoordinator:
         repository_root: Path | str,
         storage: SQLiteStorage | None = None,
         source_revision: str = "HEAD",
+        skill_registry: Any | None = None,
     ) -> None:
         self.repository_root = Path(repository_root).expanduser().resolve()
         self.storage = storage or SQLiteStorage(":memory:")
         self.source_revision = source_revision
         self.intelligence = RepositoryIntelligence(self.repository_root)
         self.reducer = InvestigationReducer(repository_root=self.repository_root)
+        if skill_registry is not None:
+            self.skill_registry = skill_registry
+        else:
+            from semantiq.skills import get_default_registry
+
+            self.skill_registry = get_default_registry()
 
     def partition_investigation_packets(
         self,
@@ -521,3 +528,59 @@ class InvestigationCoordinator:
             include_adversarial=False,
             mode="sequential",
         )
+
+    def coordinate_skill_investigation(
+        self,
+        context: Any,
+        selected_skill_ids: list[str] | None = None,
+        provider_name: str = "deterministic_engine",
+        model_name: str = "ast_graph",
+        scan_id: str | None = None,
+    ) -> tuple[list[Any], list[Any], ReducerResult]:
+        """Dynamically sequence and execute specialized skills, reducing findings with evidence preservation."""
+        from semantiq.graph.builder import GraphBuilder
+
+        actual_scan_id = scan_id or f"skill_scan_{uuid.uuid4().hex[:8]}"
+        registry = self.skill_registry
+        skill_ids = selected_skill_ids or registry.select_skills_for_context(context)
+
+        logger.info("Coordinating skill investigation with sequence: %s", skill_ids)
+        skill_outputs: list[Any] = []
+
+        for sid in skill_ids:
+            if not registry.has_skill(sid):
+                logger.warning("Skipping unregistered skill: %s", sid)
+                continue
+            skill = registry.get(sid)
+            output = skill.execute(context, provider_name=provider_name, model_name=model_name)
+            skill_outputs.append(output)
+
+            # Update context with intermediate artifacts
+            if "threat_model" in output.artifacts and not context.threat_model:
+                from semantiq.models import ThreatModel
+
+                with contextlib.suppress(Exception):
+                    context.threat_model = ThreatModel.model_validate(
+                        output.artifacts["threat_model"]
+                    )
+
+            if output.findings:
+                context.candidate_findings = list(output.findings)
+
+        # Build graph for reduction
+        files = list(context.target_files)
+        if not files and context.candidate_findings:
+            files = list({f.file_path for f in context.candidate_findings if f.file_path})
+        builder = GraphBuilder(repo_root=self.repository_root, source_revision=self.source_revision)
+        graph = builder.build(files).graph if files else None
+
+        # Consolidate via Reducer
+        reducer_res = self.reducer.reduce_skill_outputs(skill_outputs, graph=graph)
+
+        # Persist findings to storage
+        for f in reducer_res.consolidated_findings:
+            f.scan_id = actual_scan_id
+            with contextlib.suppress(Exception):
+                self.storage.save_finding(f)
+
+        return reducer_res.consolidated_findings, skill_outputs, reducer_res

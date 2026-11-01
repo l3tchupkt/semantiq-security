@@ -228,3 +228,40 @@ class InvestigationReducer:
             contradicted_count=contradicted_cnt,
             rejected_count=rejected_cnt,
         )
+
+    def reduce_skill_outputs(
+        self,
+        skill_outputs: list[Any],
+        graph: Any | None = None,
+    ) -> ReducerResult:
+        """Consolidate findings across skill execution outputs while preserving skill provenance and proof gaps."""
+        worker_outputs: list[WorkerOutput] = []
+
+        for so in skill_outputs:
+            findings = getattr(so, "findings", []) or []
+            rejected = getattr(so, "rejected_findings", []) or []
+            combined = list(findings) + list(rejected)
+            if not combined:
+                continue
+
+            skill_id = getattr(so, "skill_id", "unknown_skill")
+            telemetry = getattr(so, "telemetry", None)
+
+            for f in combined:
+                if not f.metadata:
+                    f.metadata = {}
+                f.metadata.setdefault("skill_id", skill_id)
+                f.metadata.setdefault("worker_id", f"skill_{skill_id}")
+                if telemetry:
+                    f.metadata.setdefault("skill_telemetry", telemetry)
+
+            worker_outputs.append(
+                WorkerOutput(
+                    worker_id=f"skill_worker_{skill_id.split('.')[-1]}",
+                    worker_role=WorkerRole.DISCOVERY,
+                    packet_id=f"pkt_{skill_id}",
+                    candidate_findings=combined,
+                )
+            )
+
+        return self.reduce(worker_outputs, graph=graph)
