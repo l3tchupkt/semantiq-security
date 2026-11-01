@@ -1,0 +1,22 @@
+{
+  "target": "E:\\bbp\\NASA-AMMOS\\AIT-GUI",
+  "investigation_turns": 12,
+  "total_tokens_consumed": 156254,
+  "total_mcp_calls": 12,
+  "duration_seconds": 87.49,
+  "files_explored": [
+    "ait/gui/__init__.py",
+    "tests/test_gui_security.py"
+  ],
+  "components_explored": [],
+  "dependency_boundaries_resolved": [
+    "ait.core.server.plugin.Plugin (mapped to E:/bbp/NASA-AMMOS/AIT-Core/ait/core/server/plugin.py)",
+    "ait.core.server.plugin.Plugin.process",
+    "ait.core.server.client.ZMQInputClient"
+  ],
+  "security_primitives_evaluated": [
+    "Session.id (ait/gui/__init__.py:84) -> PREDICTABLE_HEAP_ADDRESS (id(self))",
+    "sid cookie flags -> httponly=True, samesite=Strict, secure=False",
+    "_enforce_same_origin (ait/gui/__init__.py:295) -> same_origin_header_check"
+  ]
+}

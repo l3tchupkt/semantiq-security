@@ -1,0 +1,71 @@
+{
+  "error_count": 0,
+  "findings": [
+    {
+      "confidence": "high",
+      "end_line": 77,
+      "evidence_refs": [
+        "ev_9fc23e47d2cd"
+      ],
+      "file_path": "tests/conftest.py",
+      "finding_id": "sqf_ai-discovery-dynamic-dispatch-01_77",
+      "fingerprint": "semantiq/v1:sha256:a4e75caddabb63a458e7326e9719fd9fcc419b69698e54b41298e417667b7f3f",
+      "lifecycle_state": "candidate",
+      "proof_gaps_count": 0,
+      "rule_id": "AI-DISCOVERY-dynamic-dispatch-01",
+      "severity": "high",
+      "start_line": 77
+    },
+    {
+      "confidence": "high",
+      "end_line": 340,
+      "evidence_refs": [
+        "ev_32e710791c44"
+      ],
+      "file_path": "ait/gui/__init__.py",
+      "finding_id": "sqf_ai-discovery-002_297",
+      "fingerprint": "semantiq/v1:sha256:1269ac2774628b005d34461068dfc9bbd4264181bc6d3a6faddf10facd267bd6",
+      "lifecycle_state": "candidate",
+      "proof_gaps_count": 0,
+      "rule_id": "AI-DISCOVERY-002",
+      "severity": "medium",
+      "start_line": 297
+    },
+    {
+      "confidence": "high",
+      "end_line": 590,
+      "evidence_refs": [
+        "ev_6df97dc4dcc2"
+      ],
+      "file_path": "ait/gui/__init__.py",
+      "finding_id": "sqf_ai-discovery-005_562",
+      "fingerprint": "semantiq/v1:sha256:8ce293815ae9223803c562bf5f22eca68c16c0ca2cc3611504b274f4c569c216",
+      "lifecycle_state": "candidate",
+      "proof_gaps_count": 0,
+      "rule_id": "AI-DISCOVERY-005",
+      "severity": "medium",
+      "start_line": 562
+    },
+    {
+      "confidence": "high",
+      "end_line": 1216,
+      "evidence_refs": [
+        "ev_9e63657e24ba"
+      ],
+      "file_path": "ait/gui/__init__.py",
+      "finding_id": "sqf_ai-discovery-001_1193",
+      "fingerprint": "semantiq/v1:sha256:d45fa6005582c4e937854f3407a82fbb1ff66f085bf00e0e74432b70d5200029",
+      "lifecycle_state": "candidate",
+      "proof_gaps_count": 0,
+      "rule_id": "AI-DISCOVERY-001",
+      "severity": "low",
+      "start_line": 1193
+    }
+  ],
+  "findings_count": 4,
+  "is_sealed": true,
+  "manifest_hash": "sha256:a224f2f20598e81ba3c1ac4c56c99bafd054ec33dba82081a1ed575bfee59034",
+  "scan_id": "scan_9aa0ef75",
+  "violations": [],
+  "warning_count": 0
+}

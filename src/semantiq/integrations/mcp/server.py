@@ -240,6 +240,75 @@ TOOLS_MANIFEST = [
         }
     },
     {
+        "name": "semantiq_query_worker_authorization",
+        "description": "Inspect consumer-side authorization, caller identity trust, and tenant isolation in background workers.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "worker_symbol": {"type": "string", "description": "Optional worker function or handler symbol name to inspect"},
+                "queue_name": {"type": "string", "description": "Optional queue name to filter"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_query_idempotency_and_concurrency",
+        "description": "Inspect concurrency controls, idempotency guards, and retry hazards across message queues.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "entity": {"type": "string", "description": "Optional entity or domain concept (e.g. 'refund', 'order', 'payment', 'task')"},
+                "queue_name": {"type": "string", "description": "Optional queue name to inspect"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_resolve_dependency_symbol",
+        "description": "Resolve external or cross-package symbols across package boundaries without executing code.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "symbol_path": {"type": "string", "description": "Fully-qualified symbol name (e.g. 'ait.core.server.plugin.Plugin')"}
+            },
+            "required": ["path", "symbol_path"]
+        }
+    },
+    {
+        "name": "semantiq_get_dependency_source",
+        "description": "Retrieve bounded source code lines from an external dependency or imported package.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "symbol_or_path": {"type": "string", "description": "Module import path or dependency file path"},
+                "start_line": {"type": "integer", "description": "Starting line number (1-indexed)"},
+                "end_line": {"type": "integer", "description": "Ending line number (inclusive)"},
+                "max_lines": {"type": "integer", "default": 50, "description": "Maximum number of lines to return"}
+            },
+            "required": ["path", "symbol_or_path", "start_line", "end_line"]
+        }
+    },
+    {
+        "name": "semantiq_query_security_primitives",
+        "description": "Inspect security primitives (session IDs, tokens, CSRF hooks, nonces) and evaluate entropy source and cookie flags.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "kind": {
+                    "type": "string",
+                    "enum": ["session_identifier", "api_token", "csrf_token", "password_reset_token", "auth_secret", "crypto_nonce"],
+                    "description": "Optional primitive category filter"
+                }
+            },
+            "required": ["path"]
+        }
+    },
+    {
         "name": "semantiq_get_analysis_gaps",
         "description": "Retrieve unresolved dynamic dispatch sites, unparsed files, and unsupported syntax notes.",
         "inputSchema": {
@@ -302,6 +371,146 @@ TOOLS_MANIFEST = [
                 "max_depth": {"type": "integer", "default": 8, "description": "Maximum traversal depth"}
             },
             "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_resolve_symbol",
+        "description": "Statically resolve a symbol with exact file, line bounds, MRO, parameters, and provenance.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "symbol": {"type": "string", "description": "Symbol name or qualified path"}
+            },
+            "required": ["path", "symbol"]
+        }
+    },
+    {
+        "name": "semantiq_trace_argument_into_callee",
+        "description": "Trace caller argument mapping into callee parameters and internal sensitive sinks.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "caller_symbol": {"type": "string", "description": "Calling function or method symbol"},
+                "callee_symbol": {"type": "string", "description": "Target callee function or method symbol"},
+                "argument": {"type": "string", "description": "Optional argument name or index (0-based)"}
+            },
+            "required": ["path", "caller_symbol", "callee_symbol"]
+        }
+    },
+    {
+        "name": "semantiq_trace_return_to_caller",
+        "description": "Trace return expressions from a callee back into caller receiving variables.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "callee_symbol": {"type": "string", "description": "Callee function or method symbol"},
+                "caller_symbol": {"type": "string", "description": "Optional caller function symbol filter"}
+            },
+            "required": ["path", "callee_symbol"]
+        }
+    },
+    {
+        "name": "semantiq_find_routes_reaching_sensitive_operation",
+        "description": "Find all HTTP/WebSocket routes reaching a sensitive sink with guarded vs unguarded comparison.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "sink_kind": {"type": "string", "description": "Optional sink category (query, process_exec, file_operation, external_request)"},
+                "route_filter": {"type": "string", "description": "Optional route path pattern filter"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_identify_authorization_checks",
+        "description": "Inspect enforced, bypassed, and unresolved security guards protecting an entry point.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "target": {"type": "string", "description": "Route path or function symbol to inspect"}
+            },
+            "required": ["path", "target"]
+        }
+    },
+    {
+        "name": "semantiq_show_unresolved_dynamic_dispatch",
+        "description": "Extract all unresolved dynamic dispatches, getattr/setattr calls, and reflection sites.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_get_interprocedural_evidence_path",
+        "description": "Retrieve an ordered, verified causal execution path mapped directly to Phase 1 semantic roles.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "source_entry": {"type": "string", "description": "Originating route or entry handler"},
+                "sink": {"type": "string", "description": "Target sensitive sink expression, ID, or kind"}
+            },
+            "required": ["path", "source_entry", "sink"]
+        }
+    },
+    {
+        "name": "semantiq_finalize_scan_contract",
+        "description": "Deterministically finalize findings, validate citations, evaluate proof gaps, and produce sealed SARIF 2.1.0 contract.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "scan_id": {"type": "string", "description": "Optional scan ID to finalize from storage"},
+                "findings": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Optional list of findings to finalize directly"
+                }
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_list_investigation_packets",
+        "description": "Partition repository attack surface into bounded, prioritized investigation packets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_run_parallel_investigation",
+        "description": "Execute bounded parallel multi-perspective investigation across specialized workers (Discovery, Dataflow, Authorization, Adversarial).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local repository directory path"},
+                "max_workers": {"type": "integer", "description": "Maximum concurrent workers (default 3)", "default": 3},
+                "include_adversarial": {"type": "boolean", "description": "Enable adversarial verification worker", "default": True},
+                "timeout_seconds": {"type": "number", "description": "Global timeout in seconds", "default": 120.0}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "semantiq_get_coordinator_status",
+        "description": "Retrieve coordinator execution runs, packet assignments, worker states, and reducer decisions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "run_id": {"type": "string", "description": "Optional investigation run ID"}
+            }
         }
     }
 ]
@@ -482,6 +691,41 @@ class MCPServer:
                 unverified_only=args.get("unverified_only", False),
             )
 
+        elif name == "semantiq_query_worker_authorization":
+            return await self.security.query_worker_authorization(
+                target=args["path"],
+                worker_symbol=args.get("worker_symbol"),
+                queue_name=args.get("queue_name"),
+            )
+
+        elif name == "semantiq_query_idempotency_and_concurrency":
+            return await self.security.query_idempotency_and_concurrency(
+                target=args["path"],
+                entity=args.get("entity"),
+                queue_name=args.get("queue_name"),
+            )
+
+        elif name == "semantiq_resolve_dependency_symbol":
+            return await self.security.resolve_dependency_symbol(
+                target=args["path"],
+                symbol_path=args["symbol_path"],
+            )
+
+        elif name == "semantiq_get_dependency_source":
+            return await self.security.get_dependency_source(
+                target=args["path"],
+                symbol_or_path=args["symbol_or_path"],
+                start_line=args["start_line"],
+                end_line=args["end_line"],
+                max_lines=args.get("max_lines", 50),
+            )
+
+        elif name == "semantiq_query_security_primitives":
+            return await self.security.query_security_primitives(
+                target=args["path"],
+                kind=args.get("kind"),
+            )
+
         elif name == "semantiq_get_analysis_gaps":
             return await self.security.get_analysis_gaps(args["path"])
 
@@ -512,6 +756,73 @@ class MCPServer:
                 target=args["path"],
                 max_depth=args.get("max_depth", 8),
             )
+
+        elif name == "semantiq_resolve_symbol":
+            return await self.security.resolve_symbol(
+                target=args["path"],
+                symbol=args["symbol"],
+            )
+
+        elif name == "semantiq_trace_argument_into_callee":
+            return await self.security.trace_argument_into_callee(
+                target=args["path"],
+                caller_symbol=args["caller_symbol"],
+                callee_symbol=args["callee_symbol"],
+                argument=args.get("argument"),
+            )
+
+        elif name == "semantiq_trace_return_to_caller":
+            return await self.security.trace_return_to_caller(
+                target=args["path"],
+                callee_symbol=args["callee_symbol"],
+                caller_symbol=args.get("caller_symbol"),
+            )
+
+        elif name == "semantiq_find_routes_reaching_sensitive_operation":
+            return await self.security.find_routes_reaching_sensitive_operation(
+                target=args["path"],
+                sink_kind=args.get("sink_kind"),
+                route_filter=args.get("route_filter"),
+            )
+
+        elif name == "semantiq_identify_authorization_checks":
+            return await self.security.identify_authorization_checks(
+                target=args["path"],
+                target_symbol=args["target"],
+            )
+
+        elif name == "semantiq_show_unresolved_dynamic_dispatch":
+            return await self.security.show_unresolved_dynamic_dispatch(
+                target=args["path"],
+            )
+
+        elif name == "semantiq_get_interprocedural_evidence_path":
+            return await self.security.get_interprocedural_evidence_path(
+                target=args["path"],
+                source_entry=args["source_entry"],
+                sink=args["sink"],
+            )
+
+        elif name == "semantiq_finalize_scan_contract":
+            return await self.security.finalize_scan_contract(
+                target=args["path"],
+                scan_id=args.get("scan_id"),
+                findings=args.get("findings"),
+            )
+
+        elif name == "semantiq_list_investigation_packets":
+            return await self.security.list_investigation_packets(target=args["path"])
+
+        elif name == "semantiq_run_parallel_investigation":
+            return await self.security.run_parallel_investigation(
+                target=args["path"],
+                max_workers=args.get("max_workers", 3),
+                include_adversarial=args.get("include_adversarial", True),
+                timeout_seconds=float(args.get("timeout_seconds", 120.0)),
+            )
+
+        elif name == "semantiq_get_coordinator_status":
+            return await self.security.get_coordinator_status(run_id=args.get("run_id"))
 
         else:
             raise ValueError(f"Unknown MCP tool: {name}")

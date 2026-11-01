@@ -1,0 +1,132 @@
+{
+  "metadata": {
+    "evaluation_title": "Phase 4.1 Closure Audit Benchmark",
+    "target": "NASA-AMMOS/AIT-GUI",
+    "commit": "b9df6fc551ad6788ffd16e2451492dce12ead9cc",
+    "total_candidates": 7,
+    "timestamp": "2026-11-01T06:30:00+00:00"
+  },
+  "reducer_1_naive": {
+    "reducer_name": "Naive File+Line Reducer",
+    "total_candidates": 7,
+    "consolidated_count": 6,
+    "duplicate_evaluation": {
+      "confusion_matrix": {
+        "TP_duplicate_pairs_merged": 1,
+        "FP_distinct_pairs_merged": 0,
+        "FN_duplicate_pairs_missed": 0,
+        "TN_distinct_pairs_unmerged": 20
+      },
+      "duplicate_precision": 1.0,
+      "duplicate_recall": 1.0,
+      "denominator_positive_pairs": 1,
+      "denominator_negative_pairs": 20
+    },
+    "false_positive_rejection_evaluation": {
+      "confusion_matrix": {
+        "TP_false_positives_rejected": 0,
+        "FP_genuine_bugs_rejected": 0,
+        "FN_false_positives_missed": 4,
+        "TN_genuine_bugs_accepted": 3
+      },
+      "rejection_precision": 1.0,
+      "rejection_recall": 0.0,
+      "rejection_specificity": 1.0,
+      "rejection_accuracy": 0.429,
+      "ground_truth_false_positives": 4,
+      "ground_truth_genuine_bugs": 3
+    },
+    "adjudication_agreement": {
+      "correct_dispositions": 3,
+      "total_candidates": 7,
+      "agreement_rate": 0.429
+    },
+    "evidence_preservation": {
+      "evidence_preservation_rate": 0.5,
+      "proof_gaps_preserved": true,
+      "secondary_findings_preserved_as_duplicate": false
+    }
+  },
+  "reducer_2_semantic_only": {
+    "reducer_name": "Semantic Deduplicator (Without Adversarial Verification)",
+    "total_candidates": 7,
+    "consolidated_count": 6,
+    "duplicate_evaluation": {
+      "confusion_matrix": {
+        "TP_duplicate_pairs_merged": 1,
+        "FP_distinct_pairs_merged": 0,
+        "FN_duplicate_pairs_missed": 0,
+        "TN_distinct_pairs_unmerged": 20
+      },
+      "duplicate_precision": 1.0,
+      "duplicate_recall": 1.0,
+      "denominator_positive_pairs": 1,
+      "denominator_negative_pairs": 20
+    },
+    "false_positive_rejection_evaluation": {
+      "confusion_matrix": {
+        "TP_false_positives_rejected": 0,
+        "FP_genuine_bugs_rejected": 0,
+        "FN_false_positives_missed": 4,
+        "TN_genuine_bugs_accepted": 3
+      },
+      "rejection_precision": 1.0,
+      "rejection_recall": 0.0,
+      "rejection_specificity": 1.0,
+      "rejection_accuracy": 0.429,
+      "ground_truth_false_positives": 4,
+      "ground_truth_genuine_bugs": 3
+    },
+    "adjudication_agreement": {
+      "correct_dispositions": 3,
+      "total_candidates": 7,
+      "agreement_rate": 0.429
+    },
+    "evidence_preservation": {
+      "evidence_preservation_rate": 1.0,
+      "proof_gaps_preserved": true,
+      "secondary_findings_preserved_as_duplicate": true
+    }
+  },
+  "reducer_3_full_pipeline": {
+    "reducer_name": "Full Phase 4.1 Reducer (Semantic Deduplication + Path Adversarial Verification)",
+    "total_candidates": 7,
+    "consolidated_count": 7,
+    "duplicate_evaluation": {
+      "confusion_matrix": {
+        "TP_duplicate_pairs_merged": 0,
+        "FP_distinct_pairs_merged": 0,
+        "FN_duplicate_pairs_missed": 1,
+        "TN_distinct_pairs_unmerged": 20
+      },
+      "duplicate_precision": 1.0,
+      "duplicate_recall": 0.0,
+      "denominator_positive_pairs": 1,
+      "denominator_negative_pairs": 20
+    },
+    "false_positive_rejection_evaluation": {
+      "confusion_matrix": {
+        "TP_false_positives_rejected": 4,
+        "FP_genuine_bugs_rejected": 0,
+        "FN_false_positives_missed": 0,
+        "TN_genuine_bugs_accepted": 3
+      },
+      "rejection_precision": 1.0,
+      "rejection_recall": 1.0,
+      "rejection_specificity": 1.0,
+      "rejection_accuracy": 1.0,
+      "ground_truth_false_positives": 4,
+      "ground_truth_genuine_bugs": 3
+    },
+    "adjudication_agreement": {
+      "correct_dispositions": 7,
+      "total_candidates": 7,
+      "agreement_rate": 1.0
+    },
+    "evidence_preservation": {
+      "evidence_preservation_rate": 1.0,
+      "proof_gaps_preserved": true,
+      "secondary_findings_preserved_as_duplicate": true
+    }
+  }
+}

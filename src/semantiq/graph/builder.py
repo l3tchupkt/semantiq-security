@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
+from semantiq.analysis.python_semantic import PythonSemanticEngine
 from semantiq.graph.graph import SemanticProgramGraph
+from semantiq.graph.interfaces import AuthGuardKind, GuardStatus
 from semantiq.graph.models import (
     EdgeKind,
     GraphEdge,
@@ -34,6 +37,7 @@ class GraphBuilder:
     def __init__(self, repo_root: Path, source_revision: str = "") -> None:
         self.repo_root = repo_root
         self.source_revision = source_revision
+        self.python_engine = PythonSemanticEngine(self.repo_root)
 
     def build(self, in_scope_files: list[str]) -> GraphBuildResult:
         """Parse all in-scope files and resolve cross-file edges."""
@@ -98,7 +102,6 @@ class GraphBuilder:
 
             if result.parsed_successfully:
                 files_indexed += 1
-                # Connect file to repository
                 graph.add_edge(
                     GraphEdge(
                         source_id=repo_node_id,
@@ -107,6 +110,10 @@ class GraphBuilder:
                         provenance=RelationshipProvenance.DIRECT_FACT,
                     )
                 )
+
+                if clean_path.endswith((".py", ".pyi")):
+                    parsed_mod = self.python_engine.parse_source(clean_path, content)
+                    self._inject_framework_entrypoints(graph, parsed_mod, clean_path)
             else:
                 failed_files.append(clean_path)
 
@@ -114,6 +121,9 @@ class GraphBuilder:
                 all_gaps.extend(result.gaps)
 
         # Phase 2: Inter-procedural Symbol and Call Resolution
+        self.python_engine.link_project()
+        graph.semantic_engine = self.python_engine
+        self._inject_python_semantic_edges(graph)
         self._resolve_cross_module_calls(graph)
 
         # Phase 3: Evidence-Backed Asynchronous Boundary Resolution
@@ -422,3 +432,154 @@ class GraphBuilder:
                         },
                     )
                 )
+
+    def _inject_framework_entrypoints(
+        self, graph: SemanticProgramGraph, parsed_mod: Any, clean_path: str
+    ) -> None:
+        """Inject framework entrypoints (Bottle, Flask, FastAPI, Django, Tornado) into the graph."""
+        for ep in parsed_mod.entrypoints:
+            route_node = GraphNode(
+                id=ep.entrypoint_id,
+                kind=NodeKind.ROUTE,
+                label=f"Route: {ep.route_path}",
+                file_path=ep.location.file_path,
+                start_line=ep.location.start_line,
+                end_line=ep.location.end_line,
+                provenance=RelationshipProvenance.FRAMEWORK_RESOLVED,
+                source_revision=self.source_revision,
+                properties={
+                    "route_path": ep.route_path,
+                    "http_methods": ep.http_methods,
+                    "handler": ep.handler_symbol,
+                    "framework": ep.framework_name,
+                    "csrf_protected": ep.csrf_protected,
+                    "is_websocket": ep.is_websocket,
+                    "input_bindings": [b.to_dict() for b in ep.input_bindings],
+                    "auth_guards": [g.to_dict() for g in ep.auth_guards],
+                },
+            )
+            graph.add_node(route_node)
+
+            handler_id = f"sym:{clean_path}:{ep.handler_symbol}"
+            graph.add_edge(
+                GraphEdge(
+                    source_id=ep.entrypoint_id,
+                    target_id=handler_id,
+                    kind=EdgeKind.CALLS,
+                    provenance=RelationshipProvenance.FRAMEWORK_RESOLVED,
+                    confidence=1.0,
+                )
+            )
+            graph.add_edge(
+                GraphEdge(
+                    source_id=ep.entrypoint_id,
+                    target_id=handler_id,
+                    kind=EdgeKind.BINDS_ROUTE,
+                    provenance=RelationshipProvenance.FRAMEWORK_RESOLVED,
+                    confidence=1.0,
+                )
+            )
+
+            for g in ep.auth_guards:
+                guard_kind = NodeKind.AUTH_CONTROL
+                edge_kind = EdgeKind.AUTHENTICATES
+                if g.guard_kind == AuthGuardKind.AUTHORIZATION:
+                    guard_kind = NodeKind.AUTHORIZATION_CHECK
+                    edge_kind = EdgeKind.AUTHORIZES
+                elif g.guard_kind == AuthGuardKind.TENANT_ISOLATION:
+                    guard_kind = NodeKind.TENANT_CONTEXT
+                    edge_kind = EdgeKind.CONTROLS_TENANT
+                elif g.guard_kind == AuthGuardKind.CSRF_PROTECTION:
+                    guard_kind = NodeKind.CSRF_CONTROL
+                    edge_kind = EdgeKind.MITIGATES
+
+                guard_id = f"guard:{clean_path}:{g.location.start_line}:{g.guard_name}"
+                graph.add_node(
+                    GraphNode(
+                        id=guard_id,
+                        kind=guard_kind,
+                        label=f"Guard: {g.guard_name}",
+                        file_path=clean_path,
+                        start_line=g.location.start_line,
+                        end_line=g.location.end_line,
+                        provenance=RelationshipProvenance.FRAMEWORK_RESOLVED,
+                        source_revision=self.source_revision,
+                        properties={"status": g.status.value, "mechanism": g.mechanism},
+                    )
+                )
+                graph.add_edge(
+                    GraphEdge(
+                        source_id=guard_id,
+                        target_id=ep.entrypoint_id,
+                        kind=edge_kind,
+                        provenance=RelationshipProvenance.FRAMEWORK_RESOLVED,
+                        confidence=1.0 if g.status == GuardStatus.ENFORCED else 0.5,
+                    )
+                )
+
+    def _inject_python_semantic_edges(self, graph: SemanticProgramGraph) -> None:
+        """Inject verified call relationships, argument mappings, and inheritance edges."""
+        for call_rel in self.python_engine.call_relationships:
+            graph.add_edge(
+                GraphEdge(
+                    source_id=call_rel.caller_id,
+                    target_id=call_rel.callee_id,
+                    kind=EdgeKind.CALLS,
+                    provenance=call_rel.provenance,
+                    confidence=call_rel.confidence,
+                    properties={
+                        "call_expression": call_rel.call_expression,
+                        "argument_mappings": [m.to_dict() for m in call_rel.argument_mappings],
+                        "line": call_rel.call_site.start_line,
+                        "is_dynamic": call_rel.is_dynamic,
+                        "reason": call_rel.dynamic_reason,
+                    },
+                )
+            )
+
+        for df in self.python_engine.dataflow_relationships:
+            graph.add_edge(
+                GraphEdge(
+                    source_id=df.source_id,
+                    target_id=df.target_id,
+                    kind=df.edge_kind,
+                    provenance=df.provenance,
+                    confidence=df.confidence,
+                    properties={"transformation": df.transformation},
+                )
+            )
+
+        for mod in self.python_engine.modules.values():
+            for cls in mod.classes.values():
+                for base_qname in cls.resolved_bases:
+                    base_nodes = [
+                        n for n in graph.nodes.values()
+                        if n.kind == NodeKind.CLASS and (n.label == base_qname or n.label == base_qname.split(".")[-1])
+                    ]
+                    if base_nodes:
+                        graph.add_edge(
+                            GraphEdge(
+                                source_id=cls.symbol_id,
+                                target_id=base_nodes[0].id,
+                                kind=EdgeKind.INHERITS,
+                                provenance=RelationshipProvenance.STATICALLY_RESOLVED,
+                                confidence=1.0,
+                            )
+                        )
+
+                for m_name, m in cls.methods.items():
+                    for base_qname in cls.mro[1:]:
+                        base_short = base_qname.split(".")[-1]
+                        for other_mod in self.python_engine.modules.values():
+                            if base_short in other_mod.classes and m_name in other_mod.classes[base_short].methods:
+                                parent_m = other_mod.classes[base_short].methods[m_name]
+                                graph.add_edge(
+                                    GraphEdge(
+                                        source_id=m.symbol_id,
+                                        target_id=parent_m.symbol_id,
+                                        kind=EdgeKind.OVERRIDES,
+                                        provenance=RelationshipProvenance.STATICALLY_RESOLVED,
+                                        confidence=1.0,
+                                    )
+                                )
+                                break

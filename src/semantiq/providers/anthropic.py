@@ -73,6 +73,7 @@ class AnthropicProvider(BaseAIProvider):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
         system_prompt: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> ProviderToolResponse:
         if not self.api_key:
             raise ProviderAuthenticationError("Missing API key for Anthropic provider.")

@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -19,21 +20,25 @@ from semantiq.models import (
     AttackChain,
     AttackChainStep,
     CodeEvidence,
+    CodeEvidenceRole,
     ConfidenceLevel,
     DataFlowStep,
     Finding,
+    FindingLifecycleState,
     InvestigationHypothesis,
     InvestigationMemoryRecord,
+    ProofGap,
+    ProofGapStatus,
     SeverityLevel,
     SourceLocation,
     ValidationStatus,
     VulnerabilityCategory,
 )
 from semantiq.providers.base import ToolDefinition
-from semantiq.providers.verifier import verify_finding_citations
 from semantiq.repository.intelligence import RepositoryIntelligence
 from semantiq.repository.safepath import resolve_safe_path
 from semantiq.storage.sqlite import SQLiteStorage
+from semantiq.validation.contract_finalizer import ScanContractFinalizer, ViolationCode
 
 logger = logging.getLogger(__name__)
 
@@ -370,6 +375,239 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="resolve_dependency_symbol",
+        description=(
+            "Resolve external or cross-package symbols across package boundaries without executing code. "
+            "Inspects declared dependencies, sibling workspace checkouts, and imported modules (e.g. 'ait.core.server.plugin.Plugin'). "
+            "Returns base classes, methods, source file path, and provenance (EXTERNAL_DEPENDENCY vs LOCAL_REPOSITORY)."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol_path": {
+                    "type": "string",
+                    "description": "Fully-qualified symbol name to resolve (e.g. 'ait.core.server.plugin.Plugin', 'ait.core.server.plugin.Plugin.process')",
+                },
+            },
+            "required": ["symbol_path"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="get_dependency_source",
+        description=(
+            "Retrieve bounded source code lines and numbered snippets from an external dependency or imported package. "
+            "Allows inspecting third-party or sibling library implementations (e.g. ZMQ publish logic, base classes)."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol_or_path": {
+                    "type": "string",
+                    "description": "Module import path or dependency file path to inspect",
+                },
+                "start_line": {
+                    "type": "integer",
+                    "description": "1-based starting line number",
+                },
+                "end_line": {
+                    "type": "integer",
+                    "description": "1-based ending line number",
+                },
+                "max_lines": {
+                    "type": "integer",
+                    "description": "Maximum number of lines to return (default 50)",
+                },
+            },
+            "required": ["symbol_or_path", "start_line", "end_line"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="query_security_primitives",
+        description=(
+            "Inspect security primitives across the repository: session identifiers, API tokens, CSRF hooks, "
+            "cryptographic nonces, and cookie flags. Evaluates entropy sources (e.g. PREDICTABLE_HEAP_ADDRESS vs CSPRNG vs weak PRNG), "
+            "predictability, exposure channels, and lifecycle controls."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "session_identifier",
+                        "api_token",
+                        "csrf_token",
+                        "password_reset_token",
+                        "auth_secret",
+                        "crypto_nonce",
+                    ],
+                    "description": "Optional primitive category filter",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="record_proof_gap",
+        description=(
+            "Record an explicit unresolved proof obligation or unknown runtime assumption for a finding or symbol "
+            "(e.g. unverified middleware, dynamic routing, external queue handler, environment variable). "
+            "Prevents unproven assumptions from falsely becoming confirmed vulnerabilities."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "description": {"type": "string", "description": "Specific unknown fact or missing invariant"},
+                "rationale": {"type": "string", "description": "Why this unknown matters to the security claim"},
+                "target_symbol": {"type": "string", "description": "Symbol or component with unknown behavior"},
+                "resolution_criteria": {"type": "string", "description": "Concrete code or runtime proof required to resolve this gap"},
+                "finding_id": {"type": "string", "description": "Optional related finding ID or candidate identifier"},
+                "status": {
+                    "type": "string",
+                    "enum": ["open", "resolved", "blocked", "not_applicable"],
+                    "default": "open",
+                    "description": "Current status of the proof gap",
+                },
+            },
+            "required": ["description", "rationale", "resolution_criteria"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="resolve_proof_gap",
+        description="Update or resolve an existing proof gap when evidence is found or assumption is disproven.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "gap_id": {"type": "string", "description": "Identifier of the proof gap"},
+                "status": {
+                    "type": "string",
+                    "enum": ["resolved", "blocked", "not_applicable"],
+                    "description": "New status for the proof gap",
+                },
+                "resolution_notes": {"type": "string", "description": "Explanation of how the gap was resolved or why it is blocked"},
+                "supporting_evidence": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Citations or evidence IDs supporting resolution",
+                },
+            },
+            "required": ["gap_id", "status"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="resolve_symbol",
+        description=(
+            "Statically resolve a symbol with exact file, line coordinates, parameters, defaults, "
+            "decorators, base classes, computed Method Resolution Order (MRO), and provenance."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Symbol name or qualified path (e.g. 'Server', 'ait.gui.server.Server.process')"},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="trace_argument_into_callee",
+        description=(
+            "Trace how caller argument expressions map to callee parameters and propagate into internal statements or sensitive sinks."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "caller_symbol": {"type": "string", "description": "Calling function or method symbol"},
+                "callee_symbol": {"type": "string", "description": "Target callee function or method symbol"},
+                "argument": {"type": "string", "description": "Optional argument name or index (0-based) to trace"},
+            },
+            "required": ["caller_symbol", "callee_symbol"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="trace_return_to_caller",
+        description=(
+            "Trace return values and expressions from a callee back into caller receiving variables."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "callee_symbol": {"type": "string", "description": "Callee function or method symbol"},
+                "caller_symbol": {"type": "string", "description": "Optional caller function or method symbol filter"},
+            },
+            "required": ["callee_symbol"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="find_routes_reaching_sensitive_operation",
+        description=(
+            "Find all HTTP or WebSocket routes reaching a sensitive sink (SQL, exec, file op, SSRF) "
+            "and compare guarded vs unguarded routes to reveal authorization divergence."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "sink_kind": {
+                    "type": "string",
+                    "enum": ["query", "process_exec", "file_operation", "external_request", "sensitive_sink", "all"],
+                    "description": "Optional sink category filter",
+                },
+                "route_filter": {"type": "string", "description": "Optional route path pattern to filter"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="identify_authorization_checks",
+        description=(
+            "Analyze authentication, authorization, role enforcement, and CSRF protection along an entrypoint path. "
+            "Reports enforced guards, bypassed guards, and unresolved guards with source locations."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "Route path or function symbol to inspect"},
+            },
+            "required": ["target"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="show_unresolved_dynamic_dispatch",
+        description=(
+            "Extract all unresolved dynamic dispatches, getattr/setattr calls, variable invocations, "
+            "and ambiguous targets across the repository with explicit uncertainty."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
+        name="get_interprocedural_evidence_path",
+        description=(
+            "Retrieve an ordered, citation-verified causal execution path from an entrypoint to a sensitive sink, "
+            "with exact source snippets and semantic roles (user_input, entrypoint, propagation, expected_control, sink, outcome) "
+            "ready for inclusion in findings."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "source_entry": {"type": "string", "description": "Originating route or entry handler"},
+                "sink": {"type": "string", "description": "Target sensitive sink expression, ID, or kind"},
+            },
+            "required": ["source_entry", "sink"],
+            "additionalProperties": False,
+        },
+    ),
+    ToolDefinition(
         name="finish_investigation",
         description=(
             "Conclude the investigation and submit discovered vulnerability findings. "
@@ -400,6 +638,25 @@ INVESTIGATION_TOOLS: list[ToolDefinition] = [
                             "prerequisites": {"type": "array", "items": {"type": "string"}},
                             "supporting_evidence": {"type": "array", "items": {"type": "string"}},
                             "counterevidence": {"type": "array", "items": {"type": "string"}},
+                            "code_evidence": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                                "description": "Structured semantic code evidence items with semantic roles",
+                            },
+                            "root_cause_evidence_refs": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Ordered causal list of evidence IDs from entry point to exploit outcome",
+                            },
+                            "proof_gaps": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                                "description": "Unresolved proof obligations or runtime assumptions",
+                            },
+                            "lifecycle_state": {
+                                "type": "string",
+                                "enum": ["candidate", "under_investigation", "confirmed", "partially_confirmed", "rejected", "duplicate", "deferred"],
+                            },
                             "attack_chain_steps": {
                                 "type": "array",
                                 "items": {"type": "string"},
@@ -456,6 +713,8 @@ class InvestigationToolExecutor:
                     self.hypotheses[h_obj.hypothesis_id] = h_obj
         self.findings: list[Finding] = []
         self.invalid_citations: list[dict[str, Any]] = []
+        self.proof_gaps: dict[str, ProofGap] = {}
+        self.finalization_report: Any = None
         self.is_finished: bool = False
         self.finish_summary: str = ""
 
@@ -716,6 +975,19 @@ class InvestigationToolExecutor:
     def _tool_query_callers_callees(self, args: dict[str, Any]) -> dict[str, Any]:
         symbol = args.get("symbol", "")
         direction = args.get("direction", "both")
+
+        # Use enhanced graph call hierarchy if available
+        hierarchy = self.graph.query_call_hierarchy(symbol, direction=direction)
+        if hierarchy.get("callers") or hierarchy.get("callees"):
+            return {
+                "status": "success",
+                "symbol": symbol,
+                "direction": direction,
+                "caller_count": hierarchy["caller_count"],
+                "callee_count": hierarchy["callee_count"],
+                "callers": hierarchy["callers"][:25],
+                "callees": hierarchy["callees"][:25],
+            }
 
         callers: list[dict[str, Any]] = []
         callees: list[dict[str, Any]] = []
@@ -1091,6 +1363,76 @@ class InvestigationToolExecutor:
             "message": f"Hypothesis '{hyp_id}' updated to '{disposition}'.",
         }
 
+    def _tool_record_proof_gap(self, args: dict[str, Any]) -> dict[str, Any]:
+        description = str(args.get("description", "")).strip()
+        rationale = str(args.get("rationale", "")).strip()
+        target_symbol = str(args.get("target_symbol", "")).strip()
+        resolution_criteria = str(args.get("resolution_criteria", "")).strip()
+        finding_id = str(args.get("finding_id", "")).strip()
+        raw_status = str(args.get("status", "open")).lower()
+
+        status = ProofGapStatus.OPEN
+        for s in ProofGapStatus:
+            if s.value == raw_status:
+                status = s
+                break
+
+        gap = ProofGap(
+            description=description,
+            rationale=rationale,
+            target_symbol=target_symbol,
+            resolution_criteria=resolution_criteria,
+            finding_id=finding_id,
+            status=status,
+        )
+        gap.ensure_id()
+        self.proof_gaps[gap.gap_id] = gap
+
+        if self.storage:
+            with contextlib.suppress(Exception):
+                self.storage.save_proof_gap(gap)
+
+        return {
+            "status": "success",
+            "gap_id": gap.gap_id,
+            "message": f"Recorded proof gap '{gap.gap_id}': {description}",
+        }
+
+    def _tool_resolve_proof_gap(self, args: dict[str, Any]) -> dict[str, Any]:
+        gap_id = str(args.get("gap_id", "")).strip()
+        raw_status = str(args.get("status", "resolved")).lower()
+        resolution_notes = str(args.get("resolution_notes", ""))
+        supporting_evidence = list(args.get("supporting_evidence", []))
+
+        status = ProofGapStatus.RESOLVED
+        for s in ProofGapStatus:
+            if s.value == raw_status:
+                status = s
+                break
+
+        if gap_id in self.proof_gaps:
+            gap = self.proof_gaps[gap_id]
+            gap.status = status
+            if resolution_notes:
+                gap.rationale += f" [Resolution: {resolution_notes}]"
+            if supporting_evidence:
+                gap.supporting_evidence.extend([str(x) for x in supporting_evidence])
+            if self.storage:
+                with contextlib.suppress(Exception):
+                    self.storage.update_proof_gap_status(gap_id, status)
+            return {
+                "status": "success",
+                "gap_id": gap_id,
+                "new_status": status.value,
+                "message": f"Updated proof gap {gap_id} status to {status.value}.",
+            }
+        else:
+            return {
+                "status": "error",
+                "gap_id": gap_id,
+                "message": f"Proof gap '{gap_id}' not found.",
+            }
+
     def _tool_query_investigation_memory(self, args: dict[str, Any]) -> dict[str, Any]:
         filter_type = args.get("filter_type", "all")
         hypotheses_data = [h.model_dump() for h in self.hypotheses.values()]
@@ -1340,8 +1682,60 @@ class InvestigationToolExecutor:
             "concurrency_and_idempotency": results[:15],
         }
 
+    def _tool_resolve_dependency_symbol(self, args: dict[str, Any]) -> dict[str, Any]:
+        symbol_path = args.get("symbol_path", "").strip()
+        if not symbol_path:
+            return {"status": "error", "message": "Missing required 'symbol_path' parameter."}
+        from semantiq.analysis.dependency_resolution import DependencyResolver
+
+        resolver = DependencyResolver(self.repository_root)
+        sym = resolver.resolve_symbol(symbol_path)
+        if sym:
+            return {
+                "status": "success",
+                "symbol": sym.to_dict(),
+            }
+        return {
+            "status": "not_found",
+            "message": f"Symbol '{symbol_path}' could not be resolved across package boundaries or declared dependencies.",
+            "declared_dependencies": list(resolver.declared_dependencies.keys()),
+        }
+
+    def _tool_get_dependency_source(self, args: dict[str, Any]) -> dict[str, Any]:
+        symbol_or_path = args.get("symbol_or_path", "").strip()
+        if not symbol_or_path:
+            return {"status": "error", "message": "Missing required 'symbol_or_path' parameter."}
+        start_line = int(args.get("start_line", 1))
+        end_line = int(args.get("end_line", start_line + 50))
+        max_lines = int(args.get("max_lines", 50))
+        from semantiq.analysis.dependency_resolution import DependencyResolver
+
+        resolver = DependencyResolver(self.repository_root)
+        return resolver.get_source_slice(symbol_or_path, start_line, end_line, max_lines=max_lines)
+
+    def _tool_query_security_primitives(self, args: dict[str, Any]) -> dict[str, Any]:
+        kind_filter = args.get("kind")
+        from semantiq.analysis.security_primitives import SecurityPrimitivesAnalyzer
+
+        analyzer = SecurityPrimitivesAnalyzer(self.repository_root)
+        in_scope = [f.replace("\\", "/") for f in self.intelligence.file_metadata]
+        if not in_scope:
+            for p in self.repository_root.rglob("*.py"):
+                if p.is_file() and not any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv") for part in p.parts):
+                    with contextlib.suppress(Exception):
+                        in_scope.append(str(p.relative_to(self.repository_root)).replace("\\", "/"))
+        facts = analyzer.analyze_repository(in_scope)
+        if kind_filter:
+            kf = str(kind_filter).lower()
+            facts = [f for f in facts if f.kind.value == kf or kf in f.kind.value.lower()]
+        return {
+            "status": "success",
+            "total_primitives": len(facts),
+            "primitives": [f.to_dict() for f in facts],
+        }
+
     def _tool_finish_investigation(self, args: dict[str, Any]) -> dict[str, Any]:
-        summary = args.get("summary", "")
+        summary = str(args.get("summary", ""))
         raw_findings = args.get("findings", [])
         if isinstance(raw_findings, str):
             try:
@@ -1355,8 +1749,15 @@ class InvestigationToolExecutor:
         self.finish_summary = summary
         self.findings = []
 
-        validated_count = 0
-        invalid_citations: list[dict[str, Any]] = []
+        candidate_findings: list[Finding] = []
+
+        def _safe_int(val: Any, default: int = 1) -> int:
+            if val is None:
+                return default
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
 
         for rf in raw_findings:
             if isinstance(rf, str):
@@ -1367,7 +1768,7 @@ class InvestigationToolExecutor:
             if not isinstance(rf, dict):
                 continue
 
-            # Adversarial self-review check: if model determined this is not exploitable or safe, skip from active findings
+            # Adversarial self-review check: if model determined this is not exploitable or safe, skip
             is_exploitable = rf.get("is_exploitable")
             if is_exploitable is False or str(is_exploitable).lower() == "false":
                 logger.info("Finding '%s' marked not exploitable by adversarial self-review; excluding.", rf.get("title"))
@@ -1378,7 +1779,7 @@ class InvestigationToolExecutor:
                 logger.info("Finding '%s' has mitigating counterevidence and lacks exploitability confirmation; excluding.", rf.get("title"))
                 continue
 
-            raw_fpath = rf.get("file_path", "").strip().replace("\\", "/")
+            raw_fpath = str(rf.get("file_path", "")).strip().replace("\\", "/")
             repo_str = str(self.repository_root).replace("\\", "/").rstrip("/")
             if raw_fpath.startswith(repo_str):
                 raw_fpath = raw_fpath[len(repo_str):]
@@ -1387,19 +1788,98 @@ class InvestigationToolExecutor:
             fpath = raw_fpath.lstrip("/")
 
             # Retrieve snippet from file and clamp line numbers to actual line count
+
+
+            raw_sl = _safe_int(rf.get("start_line"), 1)
+
+
+            raw_el = _safe_int(rf.get("end_line"), raw_sl)
+
+
             try:
+
+
                 full_p = resolve_safe_path(self.repository_root, fpath)
+
+
                 lines = full_p.read_text(encoding="utf-8", errors="replace").splitlines()
+
+
                 total_lines = len(lines)
-                sline = max(1, min(int(rf.get("start_line", 1)), total_lines))
-                eline = max(sline, min(int(rf.get("end_line", sline)), total_lines))
+
+
+                sline = max(1, min(raw_sl, total_lines)) if total_lines else raw_sl
+
+
+                eline = max(sline, min(raw_el, total_lines)) if total_lines else raw_el
+
+
                 s_idx = max(0, sline - 1)
+
+
                 e_idx = min(len(lines), eline)
+
+
                 snippet = "\n".join(lines[s_idx:e_idx])
+
+
             except Exception:
-                sline = int(rf.get("start_line", 1))
-                eline = int(rf.get("end_line", sline))
-                snippet = ""
+
+
+                try:
+
+
+                    cand_p = Path(rf.get("file_path", ""))
+
+
+                    if cand_p.is_file():
+
+
+                        lines = cand_p.read_text(encoding="utf-8", errors="replace").splitlines()
+
+
+                        total_lines = len(lines)
+
+
+                        sline = max(1, min(raw_sl, total_lines)) if total_lines else raw_sl
+
+
+                        eline = max(sline, min(raw_el, total_lines)) if total_lines else raw_el
+
+
+                        s_idx = max(0, sline - 1)
+
+
+                        e_idx = min(len(lines), eline)
+
+
+                        snippet = "\n".join(lines[s_idx:e_idx])
+
+
+                    else:
+
+
+                        sline = raw_sl
+
+
+                        eline = max(sline, raw_el)
+
+
+                        snippet = ""
+
+
+                except Exception:
+
+
+                    sline = raw_sl
+
+
+                    eline = max(sline, raw_el)
+
+
+                    snippet = ""
+
+
 
             loc = SourceLocation(
                 file_path=fpath.replace("\\", "/"),
@@ -1408,16 +1888,51 @@ class InvestigationToolExecutor:
                 symbol=rf.get("entry_point", rf.get("title", "")),
                 role="sink",
             )
-            evidence = CodeEvidence(
-                snippet=snippet,
-                start_line=sline,
-                end_line=eline,
-                explanation=rf.get("summary", ""),
-                role="sink",
-            )
+
+            # Build semantic code evidence collection
+            evidence_collection: list[CodeEvidence] = []
+            raw_evs = rf.get("code_evidence", [])
+            if isinstance(raw_evs, list) and raw_evs:
+                for ev_item in raw_evs:
+                    if not isinstance(ev_item, dict):
+                        continue
+                    ev_role_str = str(ev_item.get("role", "sink")).lower()
+                    ev_role = CodeEvidenceRole.SINK
+                    for r in CodeEvidenceRole:
+                        if r.value == ev_role_str:
+                            ev_role = r
+                            break
+                    ev_fp = str(ev_item.get("file_path", fpath)).replace("\\", "/").lstrip("/")
+                    ev_sl = _safe_int(ev_item.get("start_line"), sline)
+                    ev_el = _safe_int(ev_item.get("end_line"), ev_sl)
+                    ce = CodeEvidence(
+                        evidence_id=str(ev_item.get("evidence_id", "")),
+                        file_path=ev_fp,
+                        start_line=ev_sl,
+                        end_line=ev_el,
+                        snippet=str(ev_item.get("snippet", "")),
+                        role=ev_role,
+                        explanation=str(ev_item.get("explanation", "")),
+                        provenance=str(ev_item.get("provenance", "LOCAL_REPOSITORY")),
+                        verification_status=str(ev_item.get("verification_status", "UNVERIFIED")),
+                    )
+                    ce.ensure_id()
+                    evidence_collection.append(ce)
+
+            if not evidence_collection:
+                primary_evidence = CodeEvidence(
+                    snippet=snippet,
+                    start_line=sline,
+                    end_line=eline,
+                    file_path=fpath.replace("\\", "/"),
+                    explanation=str(rf.get("summary", "")),
+                    role=CodeEvidenceRole.SINK,
+                )
+                primary_evidence.ensure_id()
+                evidence_collection.append(primary_evidence)
 
             # Map category
-            cat_str = rf.get("category", "generic").lower()
+            cat_str = str(rf.get("category", "generic")).lower()
             cat = VulnerabilityCategory.GENERIC
             for c in VulnerabilityCategory:
                 if c.value in cat_str or cat_str in c.value:
@@ -1425,7 +1940,7 @@ class InvestigationToolExecutor:
                     break
 
             # Map severity
-            sev_str = rf.get("severity", "high").lower()
+            sev_str = str(rf.get("severity", "high")).lower()
             sev = SeverityLevel.HIGH
             for s in SeverityLevel:
                 if s.value == sev_str:
@@ -1452,20 +1967,65 @@ class InvestigationToolExecutor:
                 )
 
             achain = AttackChain(
-                chain_id=f"achain_{rf.get('rule_id', 'ai').lower()}_{sline}",
+                chain_id=f"achain_{str(rf.get('rule_id', 'ai')).lower()}_{sline}",
                 title=f"Attack Chain: {rf.get('title')}",
-                starting_point=rf.get("entry_point", fpath),
-                target_operation=rf.get("title", ""),
+                starting_point=str(rf.get("entry_point", fpath)),
+                target_operation=str(rf.get("title", "")),
                 steps=steps,
-                potential_impact=rf.get("summary", ""),
+                potential_impact=str(rf.get("summary", "")),
             )
 
+            # Determine lifecycle state
+            raw_lifecycle = str(rf.get("lifecycle_state", "")).lower()
+            lifecycle = FindingLifecycleState.CANDIDATE
+            for ls in FindingLifecycleState:
+                if ls.value == raw_lifecycle:
+                    lifecycle = ls
+                    break
+            if lifecycle == FindingLifecycleState.CANDIDATE and is_exploitable is True:
+                lifecycle = FindingLifecycleState.CONFIRMED
+
+            # Gather proof gaps
+            finding_gaps: list[ProofGap] = []
+            raw_gaps = rf.get("proof_gaps", [])
+            if isinstance(raw_gaps, list):
+                for pg_dict in raw_gaps:
+                    if isinstance(pg_dict, dict):
+                        pg_stat = ProofGapStatus.OPEN
+                        for pgs in ProofGapStatus:
+                            if pgs.value == str(pg_dict.get("status", "open")).lower():
+                                pg_stat = pgs
+                                break
+                        gap_obj = ProofGap(
+                            gap_id=str(pg_dict.get("gap_id", "")),
+                            description=str(pg_dict.get("description", "")),
+                            rationale=str(pg_dict.get("rationale", "")),
+                            target_symbol=str(pg_dict.get("target_symbol", "")),
+                            resolution_criteria=str(pg_dict.get("resolution_criteria", "")),
+                            supporting_evidence=list(pg_dict.get("supporting_evidence", [])),
+                            status=pg_stat,
+                        )
+                        gap_obj.ensure_id()
+                        finding_gaps.append(gap_obj)
+
+            # Associate any matching session proof gaps
+            f_ident = f"sqf_{str(rf.get('rule_id', 'ai')).lower()}_{sline}"
+            for g in self.proof_gaps.values():
+                if (
+                    g.finding_id == f_ident
+                    or (g.target_symbol and g.target_symbol in (fpath, str(rf.get("entry_point", ""))))
+                ) and g not in finding_gaps:
+                    finding_gaps.append(g)
+
+            raw_refs = rf.get("root_cause_evidence_refs", [])
+            ordered_refs = [str(r) for r in raw_refs] if raw_refs else [e.evidence_id for e in evidence_collection]
+
             f = Finding(
-                finding_id=f"sqf_{rf.get('rule_id', 'ai').lower()}_{sline}",
-                occurrence_id=f"occ_{rf.get('rule_id', 'ai').lower()}_{sline}",
-                rule_id=rf.get("rule_id", "AI-DISCOVERY-001"),
-                title=rf.get("title", "Discovered Vulnerability"),
-                summary=rf.get("summary", ""),
+                finding_id=f_ident,
+                occurrence_id=f"occ_{str(rf.get('rule_id', 'ai')).lower()}_{sline}",
+                rule_id=str(rf.get("rule_id", "AI-DISCOVERY-001")),
+                title=str(rf.get("title", "Discovered Vulnerability")),
+                summary=str(rf.get("summary", "")),
                 category=cat,
                 severity=sev,
                 confidence=ConfidenceLevel.HIGH if not rf.get("counterevidence") else ConfidenceLevel.MEDIUM,
@@ -1473,12 +2033,16 @@ class InvestigationToolExecutor:
                 start_line=sline,
                 end_line=eline,
                 locations=[loc],
-                code_evidence=[evidence],
-                data_flow=[DataFlowStep(location=loc, description=rf.get("summary", ""))],
-                impact=rf.get("summary", ""),
+                code_evidence=evidence_collection,
+                root_cause_evidence_refs=ordered_refs,
+                proof_gaps=finding_gaps,
+                lifecycle_state=lifecycle,
+                data_flow=[DataFlowStep(location=loc, description=str(rf.get("summary", "")))],
+                impact=str(rf.get("summary", "")),
                 prerequisites=list(rf.get("prerequisites", [])),
                 supporting_evidence=list(rf.get("supporting_evidence", [])),
                 counterevidence=list(rf.get("counterevidence", [])),
+                counterevidence_notes=list(rf.get("counterevidence_notes", [])),
                 attack_chain=[str(s) for s in raw_steps],
                 structured_attack_chain=achain,
                 validation_status=ValidationStatus.EVIDENCE_SUPPORTED,
@@ -1488,20 +2052,129 @@ class InvestigationToolExecutor:
             if rf.get("adversarial_review"):
                 f.metadata["adversarial_review"] = rf.get("adversarial_review")
 
-            # Verify local citations
-            valid, reason = verify_finding_citations(self.repository_root, f)
-            if valid:
-                validated_count += 1
-                self.findings.append(f)
-            else:
-                invalid_citations.append({"finding_id": f.finding_id, "title": f.title, "reason": reason})
+            candidate_findings.append(f)
 
-        self.invalid_citations = invalid_citations
+        # Deterministic contract finalization
+        finalizer = ScanContractFinalizer(self.repository_root)
+        final_scan_id = f"investigation_{uuid.uuid4().hex[:8]}"
+        report = finalizer.finalize(candidate_findings, scan_id=final_scan_id)
+
+        self.findings = report.finalized_findings
+        self.finalization_report = report
+        self.invalid_citations = [
+            v.to_dict()
+            for v in report.violations
+            if v.code in (ViolationCode.INVALID_CITATION, ViolationCode.FILE_NOT_FOUND, ViolationCode.OUT_OF_BOUNDS_LINE)
+        ]
+
+        if self.storage:
+            with contextlib.suppress(Exception):
+                self.storage.save_finalization_report(report, scan_id=final_scan_id)
 
         return {
             "status": "success",
+            "scan_id": final_scan_id,
+            "is_sealed": report.is_sealed,
+            "overall_security_score": report.overall_security_score,
             "findings_submitted": len(raw_findings),
-            "findings_validated": validated_count,
-            "invalid_citations": invalid_citations,
-            "message": f"Investigation finalized. {validated_count} verified finding(s) accepted.",
+            "findings_validated": len(report.finalized_findings),
+            "rejected_findings_count": report.rejected_findings_count,
+            "error_count": report.error_count,
+            "warning_count": report.warning_count,
+            "violations": [v.to_dict() for v in report.violations],
+            "invalid_citations": self.invalid_citations,
+            "message": (
+                f"Investigation contract finalized: {len(report.finalized_findings)} valid finding(s), "
+                f"{report.rejected_findings_count} rejected, sealed={report.is_sealed} (score: {report.overall_security_score})."
+            ),
+        }
+
+    def _tool_resolve_symbol(self, args: dict[str, Any]) -> dict[str, Any]:
+        symbol = args.get("symbol", "").strip()
+        if not symbol:
+            return {"status": "error", "error": "symbol parameter is required"}
+
+        res = self.graph.resolve_symbol_detail(symbol)
+        if not res:
+            return {"status": "symbol_not_found", "symbol": symbol}
+
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "resolved": res,
+        }
+
+    def _tool_trace_argument_into_callee(self, args: dict[str, Any]) -> dict[str, Any]:
+        caller = args.get("caller_symbol", "").strip()
+        callee = args.get("callee_symbol", "").strip()
+        arg_val = args.get("argument")
+
+        if not caller or not callee:
+            return {"status": "error", "error": "caller_symbol and callee_symbol are required"}
+
+        res = self.graph.trace_argument_to_callee(caller, callee, arg_val)
+        return {
+            "status": "success",
+            "trace": res,
+        }
+
+    def _tool_trace_return_to_caller(self, args: dict[str, Any]) -> dict[str, Any]:
+        callee = args.get("callee_symbol", "").strip()
+        caller = args.get("caller_symbol")
+
+        if not callee:
+            return {"status": "error", "error": "callee_symbol is required"}
+
+        res = self.graph.trace_return_to_caller(callee, caller)
+        return {
+            "status": "success",
+            "trace": res,
+        }
+
+    def _tool_find_routes_reaching_sensitive_operation(self, args: dict[str, Any]) -> dict[str, Any]:
+        sink_kind = args.get("sink_kind")
+        if sink_kind == "all":
+            sink_kind = None
+        route_filter = args.get("route_filter")
+
+        chains = self.graph.query_route_reachability_chain(route_path=route_filter, sink_kind=sink_kind)
+        return {
+            "status": "success",
+            "sink_kind": sink_kind,
+            "route_filter": route_filter,
+            "total_chains_found": len(chains),
+            "chains": chains,
+        }
+
+    def _tool_identify_authorization_checks(self, args: dict[str, Any]) -> dict[str, Any]:
+        target = args.get("target", "").strip()
+        if not target:
+            return {"status": "error", "error": "target parameter is required"}
+
+        res = self.graph.identify_route_guards(target)
+        return {
+            "status": "success",
+            "target": target,
+            "guard_analysis": res,
+        }
+
+    def _tool_show_unresolved_dynamic_dispatch(self, _args: dict[str, Any]) -> dict[str, Any]:
+        dispatches = self.graph.get_unresolved_dispatches()
+        return {
+            "status": "success",
+            "total_unresolved": len(dispatches),
+            "unresolved_dispatches": dispatches,
+        }
+
+    def _tool_get_interprocedural_evidence_path(self, args: dict[str, Any]) -> dict[str, Any]:
+        source = args.get("source_entry", "").strip()
+        sink = args.get("sink", "").strip()
+
+        if not source or not sink:
+            return {"status": "error", "error": "source_entry and sink parameters are required"}
+
+        res = self.graph.get_interprocedural_evidence_path(source, sink)
+        return {
+            "status": "success",
+            "result": res,
         }

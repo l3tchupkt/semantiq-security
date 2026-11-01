@@ -71,6 +71,71 @@ class VulnerabilityCategory(str, Enum):
     GENERIC = "generic"
 
 
+class FindingLifecycleState(str, Enum):
+    """Explicit lifecycle state of a vulnerability finding."""
+    CANDIDATE = "candidate"
+    UNDER_INVESTIGATION = "under_investigation"
+    CONFIRMED = "confirmed"
+    PARTIALLY_CONFIRMED = "partially_confirmed"
+    REJECTED = "rejected"
+    DUPLICATE = "duplicate"
+    DEFERRED = "deferred"
+
+
+class CodeEvidenceRole(str, Enum):
+    """Semantic role of a code evidence excerpt."""
+    USER_INPUT = "user_input"
+    ENTRYPOINT = "entrypoint"
+    PROPAGATION = "propagation"
+    ROOT_CONTROL = "root_control"
+    SINK = "sink"
+    OUTCOME = "outcome"
+    EXPECTED_CONTROL = "expected_control"
+
+
+class EvidenceProvenance(str, Enum):
+    """Source provenance of code evidence."""
+    LOCAL_REPOSITORY = "LOCAL_REPOSITORY"
+    EXTERNAL_DEPENDENCY = "EXTERNAL_DEPENDENCY"
+    CONFIGURATION = "CONFIGURATION"
+    ENVIRONMENT = "ENVIRONMENT"
+
+
+class EvidenceVerificationStatus(str, Enum):
+    """Citation verification status."""
+    VERIFIED = "VERIFIED"
+    UNVERIFIED = "UNVERIFIED"
+    REJECTED = "REJECTED"
+    STALE = "STALE"
+
+
+class ProofGapStatus(str, Enum):
+    """Status of an unresolved proof obligation."""
+    OPEN = "open"
+    RESOLVED = "resolved"
+    BLOCKED = "blocked"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class ProofGap(BaseModel):
+    """Structured unresolved proof obligation for a security claim."""
+    gap_id: str = Field(default_factory=lambda: "")
+    description: str
+    rationale: str = ""
+    finding_id: str = ""
+    target_symbol: str = ""
+    supporting_evidence: list[str] = Field(default_factory=list)
+    resolution_criteria: str = ""
+    status: ProofGapStatus = ProofGapStatus.OPEN
+
+    def ensure_id(self) -> str:
+        """Ensure a stable unique identifier is populated."""
+        if not self.gap_id:
+            raw = f"{self.finding_id}:{self.target_symbol}:{self.description}"
+            self.gap_id = f"gap_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:12]}"
+        return self.gap_id
+
+
 class SourceLocation(BaseModel):
     """Location coordinate within a source file."""
     model_config = ConfigDict(frozen=True)
@@ -85,11 +150,24 @@ class SourceLocation(BaseModel):
 
 class CodeEvidence(BaseModel):
     """Concrete code excerpt supporting a finding."""
-    snippet: str
+    evidence_id: str = Field(default_factory=lambda: "")
+    file_path: str = ""
     start_line: int
     end_line: int
-    explanation: str
-    role: str = "sink"
+    snippet: str
+    role: CodeEvidenceRole | str = CodeEvidenceRole.SINK
+    explanation: str = ""
+    provenance: EvidenceProvenance | str = EvidenceProvenance.LOCAL_REPOSITORY
+    verification_status: EvidenceVerificationStatus | str = EvidenceVerificationStatus.UNVERIFIED
+    column: int | None = None
+    symbol: str | None = None
+
+    def ensure_id(self) -> str:
+        """Ensure a stable unique identifier is populated."""
+        if not self.evidence_id:
+            raw = f"{self.file_path}:{self.start_line}:{self.end_line}:{self.role}:{self.snippet[:50]}"
+            self.evidence_id = f"ev_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:12]}"
+        return self.evidence_id
 
 
 class DataFlowStep(BaseModel):
@@ -254,6 +332,10 @@ class Finding(BaseModel):
     structured_attack_chain: AttackChain | None = None
     hypothesis: InvestigationHypothesis | None = None
     uncertainty: str = ""
+    lifecycle_state: FindingLifecycleState = FindingLifecycleState.CANDIDATE
+    root_cause_evidence_refs: list[str] = Field(default_factory=list)
+    proof_gaps: list[ProofGap] = Field(default_factory=list)
+    counterevidence_notes: list[str] = Field(default_factory=list)
     validation_status: ValidationStatus = ValidationStatus.CANDIDATE
     validation_result: ValidationResult | None = None
     remediation: str = ""

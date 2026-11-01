@@ -53,6 +53,7 @@ class OllamaProvider(BaseAIProvider):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
         system_prompt: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> ProviderToolResponse:
         if self.endpoint.endswith("/api/generate"):
             chat_endpoint = self.endpoint[:-len("/api/generate")] + "/api/chat"

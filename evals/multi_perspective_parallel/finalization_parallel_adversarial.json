@@ -1,0 +1,13 @@
+{
+  "scan_id": "scan_9aa0ef75",
+  "is_sealed": true,
+  "total_findings_evaluated": 4,
+  "valid_findings_count": 4,
+  "rejected_findings_count": 0,
+  "error_count": 0,
+  "warning_count": 0,
+  "overall_security_score": 8.0,
+  "violations": [],
+  "finalized_findings_count": 4,
+  "finalized_at": "2026-10-31T19:58:43.021459+00:00"
+}

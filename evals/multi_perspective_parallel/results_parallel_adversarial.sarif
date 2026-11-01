@@ -1,0 +1,439 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Causal execution trace for Unsafe setattr in conftest.py dynamic module initialization"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[SINK] Evidence step"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "tests/conftest.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 77,
+                            "snippet": {
+                              "text": "setattr(log, _level, lambda *a, **k: None)"
+                            },
+                            "startLine": 77
+                          }
+                        }
+                      },
+                      "step": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fingerprints": {
+            "primary": "semantiq/v1:sha256:a4e75caddabb63a458e7326e9719fd9fcc419b69698e54b41298e417667b7f3f"
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tests/conftest.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 77,
+                  "startLine": 77
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Line 77 uses setattr(log, _level, lambda *a, **k: None) within a loop over log level names. If _level were derived from untrusted input, arbitrary attributes could be set on the log object, potentially leading to command execution or configuration tampering."
+          },
+          "properties": {
+            "evidence_count": 1,
+            "lifecycle_state": "candidate",
+            "proof_gap_count": 0,
+            "security-score": 8.0
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "[CodeEvidenceRole.SINK] "
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tests/conftest.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 77,
+                  "startLine": 77
+                }
+              }
+            }
+          ],
+          "ruleId": "AI-DISCOVERY-dynamic-dispatch-01"
+        },
+        {
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Causal execution trace for CSRF null\u2011origin test (test_csrf_null_origin_blocked) appears to be enforced by _enforce_same_origin hook"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[SINK] Evidence step"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 297,
+                            "snippet": {
+                              "text": "def _enforce_same_origin():"
+                            },
+                            "startLine": 297
+                          }
+                        }
+                      },
+                      "step": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fingerprints": {
+            "primary": "semantiq/v1:sha256:1269ac2774628b005d34461068dfc9bbd4264181bc6d3a6faddf10facd267bd6"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 340,
+                  "startLine": 297
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The _enforce_same_origin decorator (line 297) is applied to several routes and blocks requests lacking a valid Origin header or with a null origin, matching the test expectation."
+          },
+          "properties": {
+            "evidence_count": 1,
+            "lifecycle_state": "candidate",
+            "proof_gap_count": 0,
+            "security-score": 5.0
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "[CodeEvidenceRole.SINK] "
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 297,
+                  "startLine": 297
+                }
+              }
+            }
+          ],
+          "ruleId": "AI-DISCOVERY-002"
+        },
+        {
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Causal execution trace for test_cross_origin_via_referer_blocked \u2013 referer not used as origin check"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[SINK] Evidence step"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 562,
+                            "snippet": {
+                              "text": "def handle_root():"
+                            },
+                            "startLine": 562
+                          }
+                        }
+                      },
+                      "step": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fingerprints": {
+            "primary": "semantiq/v1:sha256:8ce293815ae9223803c562bf5f22eca68c16c0ca2cc3611504b274f4c569c216"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 590,
+                  "startLine": 562
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "No referer\u2011based origin validation is present; cross\u2011origin requests are governed solely by the _enforce_same_origin origin check, which may allow referer\u2011only attacks if the origin is permissive."
+          },
+          "properties": {
+            "evidence_count": 1,
+            "lifecycle_state": "candidate",
+            "proof_gap_count": 0,
+            "security-score": 5.0
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "[CodeEvidenceRole.SINK] "
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 562,
+                  "startLine": 562
+                }
+              }
+            }
+          ],
+          "ruleId": "AI-DISCOVERY-005"
+        },
+        {
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Causal execution trace for Path traversal in /scripts/load/<name> mitigated by is_relative_to check"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[SINK] Evidence step"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 1193,
+                            "snippet": {
+                              "text": "def handle_scripts_load(name):"
+                            },
+                            "startLine": 1193
+                          }
+                        }
+                      },
+                      "step": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fingerprints": {
+            "primary": "semantiq/v1:sha256:d45fa6005582c4e937854f3407a82fbb1ff66f085bf00e0e74432b70d5200029"
+          },
+          "level": "note",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 1216,
+                  "startLine": 1193
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The handler resolves the requested name against an resolved safe_root and asserts script_path.is_relative_to(safe_root) before opening the file. This prevents directory traversal attacks."
+          },
+          "properties": {
+            "evidence_count": 1,
+            "lifecycle_state": "candidate",
+            "proof_gap_count": 0,
+            "security-score": 2.0
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "[CodeEvidenceRole.SINK] "
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 1193,
+                  "startLine": 1193
+                }
+              }
+            }
+          ],
+          "ruleId": "AI-DISCOVERY-001"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Semantiq Security",
+          "organization": "l3tchupkt",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Line 77 uses setattr(log, _level, lambda *a, **k: None) within a loop over log level names. If _level were derived from untrusted input, arbitrary attributes could be set on the log object, potentially leading to command execution or configuration tampering."
+              },
+              "help": {
+                "text": "Remediate according to Semantiq findings guidance."
+              },
+              "id": "AI-DISCOVERY-dynamic-dispatch-01",
+              "name": "Unsafe setattr in conftest.py dynamic module initialization",
+              "properties": {
+                "category": "generic",
+                "cwe": [],
+                "precision": "high",
+                "security-severity": "8.0"
+              },
+              "shortDescription": {
+                "text": "Unsafe setattr in conftest.py dynamic module initialization"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "The _enforce_same_origin decorator (line 297) is applied to several routes and blocks requests lacking a valid Origin header or with a null origin, matching the test expectation."
+              },
+              "help": {
+                "text": "Remediate according to Semantiq findings guidance."
+              },
+              "id": "AI-DISCOVERY-002",
+              "name": "CSRF null\u2011origin test (test_csrf_null_origin_blocked) appears to be enforced by _enforce_same_origin hook",
+              "properties": {
+                "category": "generic",
+                "cwe": [],
+                "precision": "high",
+                "security-severity": "5.0"
+              },
+              "shortDescription": {
+                "text": "CSRF null\u2011origin test (test_csrf_null_origin_blocked) appears to be enforced by _enforce_same_origin hook"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "No referer\u2011based origin validation is present; cross\u2011origin requests are governed solely by the _enforce_same_origin origin check, which may allow referer\u2011only attacks if the origin is permissive."
+              },
+              "help": {
+                "text": "Remediate according to Semantiq findings guidance."
+              },
+              "id": "AI-DISCOVERY-005",
+              "name": "test_cross_origin_via_referer_blocked \u2013 referer not used as origin check",
+              "properties": {
+                "category": "generic",
+                "cwe": [],
+                "precision": "high",
+                "security-severity": "5.0"
+              },
+              "shortDescription": {
+                "text": "test_cross_origin_via_referer_blocked \u2013 referer not used as origin check"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "fullDescription": {
+                "text": "The handler resolves the requested name against an resolved safe_root and asserts script_path.is_relative_to(safe_root) before opening the file. This prevents directory traversal attacks."
+              },
+              "help": {
+                "text": "Remediate according to Semantiq findings guidance."
+              },
+              "id": "AI-DISCOVERY-001",
+              "name": "Path traversal in /scripts/load/<name> mitigated by is_relative_to check",
+              "properties": {
+                "category": "generic",
+                "cwe": [],
+                "precision": "high",
+                "security-severity": "2.0"
+              },
+              "shortDescription": {
+                "text": "Path traversal in /scripts/load/<name> mitigated by is_relative_to check"
+              }
+            }
+          ],
+          "semanticVersion": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

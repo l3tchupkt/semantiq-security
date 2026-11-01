@@ -1,0 +1,19 @@
+{
+  "target": "E:\\bbp\\NASA-AMMOS\\AIT-GUI",
+  "investigation_turns": 10,
+  "total_tokens_consumed": 112311,
+  "total_mcp_calls": 10,
+  "duration_seconds": 40.7,
+  "files_explored": [
+    "ait/gui/__init__.py"
+  ],
+  "components_explored": [
+    "class",
+    "def send"
+  ],
+  "unexplored_areas": [
+    "ait/gui/static/webpack.config.js (Frontend build pipeline)",
+    "ait/gui/openmct_adapter (Client-side telemetry widgets)"
+  ],
+  "unexplored_reason": "Investigation focused on backend trust boundaries, HTTP endpoints, and command handlers."
+}

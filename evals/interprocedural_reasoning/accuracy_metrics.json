@@ -1,0 +1,115 @@
+{
+  "symbol_resolution": {
+    "tested": 10,
+    "resolved": 10,
+    "accuracy_pct": 100.0,
+    "samples": [
+      {
+        "query": "Session",
+        "status": "resolved",
+        "kind": "class",
+        "file": "ait/gui/__init__.py",
+        "line": 44,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "SessionStore",
+        "status": "resolved",
+        "kind": "class",
+        "file": "ait/gui/__init__.py",
+        "line": 121,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "Playback",
+        "status": "resolved",
+        "kind": "class",
+        "file": "ait/gui/__init__.py",
+        "line": 193,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "HTMLRoot",
+        "status": "resolved",
+        "kind": "class",
+        "file": "ait/gui/__init__.py",
+        "line": 271,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "AITGUIPlugin",
+        "status": "resolved",
+        "kind": "class",
+        "file": "ait/gui/__init__.py",
+        "line": 356,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "_enforce_same_origin",
+        "status": "resolved",
+        "kind": "function",
+        "file": "ait/gui/__init__.py",
+        "line": 297,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "handle_root",
+        "status": "resolved",
+        "kind": "function",
+        "file": "ait/gui/__init__.py",
+        "line": 562,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "handle_cmd",
+        "status": "resolved",
+        "kind": "method",
+        "file": "ait/gui/__init__.py",
+        "line": 432,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "Plugin",
+        "status": "resolved",
+        "kind": "class",
+        "file": "tests/conftest.py",
+        "line": 127,
+        "provenance": "direct_fact"
+      },
+      {
+        "query": "bg_exec_seq",
+        "status": "resolved",
+        "kind": "function",
+        "file": "ait/gui/__init__.py",
+        "line": 1142,
+        "provenance": "direct_fact"
+      }
+    ]
+  },
+  "framework_entrypoints": {
+    "total_routes_detected": 34,
+    "bottle_routes": 34,
+    "tornado_routes": 0,
+    "routes_with_extracted_inputs": 12,
+    "routes_with_auth_guards": 0
+  },
+  "unresolved_analysis": {
+    "total_unresolved_sites": 46,
+    "explicit_uncertainty_reasons": [
+      "Ambiguous symbol: 5 candidates for '__init__'",
+      "Explicit dynamic reflection via setattr()",
+      "Explicit dynamic reflection via setattr()",
+      "Explicit dynamic reflection via getattr()",
+      "Explicit dynamic reflection via getattr()",
+      "Explicit dynamic reflection via getattr()",
+      "Explicit dynamic reflection via getattr()",
+      "Explicit dynamic reflection via getattr()",
+      "Explicit dynamic reflection via getattr()",
+      "Explicit dynamic reflection via getattr()"
+    ]
+  },
+  "interprocedural_chains": {
+    "total_chains_to_sinks": 23,
+    "unguarded_chains_count": 23
+  }
+}

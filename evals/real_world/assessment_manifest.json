@@ -1,0 +1,17 @@
+{
+  "manifest_version": "0.1.0",
+  "semantiq_commit": "1e032b6325dcbacf4671e97b189c545e16c7b1c6",
+  "semantiq_branch": "main",
+  "target_repository": "NASA-AMMOS/AIT-GUI",
+  "target_commit": "b9df6fc551ad6788ffd16e2451492dce12ead9cc",
+  "target_branch": "master",
+  "provider": "nvidia",
+  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+  "artifact_hashes": {
+    "investigation_trace.jsonl": "b5403ef4b2c6c2d9a435598e0cfc706722276fe3bb00c29f72e5edcf1aeacf68",
+    "findings.json": "f2230e90d2d5f4868ffb76c2f728ba3a9cec9c594755beae1435fcc041e5f17c",
+    "coverage_summary.json": "534e9aa7153f53c8aff2dabd2727bf870cbdd4c322e1224bbe6abd521a55be46",
+    "provider_run.json": "58fb1d997f1054c9134a716cc48d4bd0120117e3aa85f97f506871c8b5ebec04",
+    "assessment_report.md": "5fe10a1d4223925694f9fcf7d7e3833d3acc616985c665793f0b7964611aa01c"
+  }
+}

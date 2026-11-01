@@ -1,0 +1,124 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Causal execution trace for Path traversal in /scripts/load/<name> could lead to command execution"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[SINK] Evidence step"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 1193,
+                            "snippet": {
+                              "text": "def handle_scripts_load(name):"
+                            },
+                            "startLine": 1193
+                          }
+                        }
+                      },
+                      "step": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fingerprints": {
+            "primary": "semantiq/v1:sha256:1e635c49b57924a15610e19f69d8a93904476ba80aa1a8e157e34a0c84b80bb3"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 1210,
+                  "startLine": 1193
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "handle_scripts_load resolves script path relative to ScriptRoot; while it checks is_relative_to, bypass possible if ScriptRoot is controllable or path encoding tricks."
+          },
+          "properties": {
+            "evidence_count": 1,
+            "lifecycle_state": "candidate",
+            "proof_gap_count": 1,
+            "security-score": 4.0
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "[CodeEvidenceRole.SINK] "
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 1193,
+                  "startLine": 1193
+                }
+              }
+            }
+          ],
+          "ruleId": "AI-DISCOVERY-pkt_command_dispatch_01"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Semantiq Security",
+          "organization": "l3tchupkt",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "handle_scripts_load resolves script path relative to ScriptRoot; while it checks is_relative_to, bypass possible if ScriptRoot is controllable or path encoding tricks."
+              },
+              "help": {
+                "text": "Remediate according to Semantiq findings guidance."
+              },
+              "id": "AI-DISCOVERY-pkt_command_dispatch_01",
+              "name": "Path traversal in /scripts/load/<name> could lead to command execution",
+              "properties": {
+                "category": "path_traversal",
+                "cwe": [],
+                "precision": "medium",
+                "security-severity": "5.0"
+              },
+              "shortDescription": {
+                "text": "Path traversal in /scripts/load/<name> could lead to command execution"
+              }
+            }
+          ],
+          "semanticVersion": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

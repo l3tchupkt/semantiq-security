@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -531,6 +532,129 @@ class Semantiq:
         flows = intelligence.get_async_flows(component=component, queue=queue, unverified_only=unverified_only)
         return [f.to_dict() for f in flows]
 
+    async def query_worker_authorization(
+        self,
+        target: str | Path,
+        worker_symbol: str | None = None,
+        queue_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Inspect consumer-side authorization and tenant isolation in background workers."""
+        target_path = Path(target).expanduser().resolve()
+        inspector = RepositoryInspector(self.config.scan)
+        inspection = inspector.inspect(target_path)
+        from semantiq.repository.intelligence import RepositoryIntelligence
+
+        intelligence = RepositoryIntelligence(target_path)
+        intelligence.index_repository(inspection.in_scope_files)
+        flows = intelligence.get_async_flows(queue=queue_name)
+        if worker_symbol:
+            ws = worker_symbol.lower()
+            flows = [
+                f for f in flows
+                if (f.consumer_symbol and ws in f.consumer_symbol.lower())
+                or (f.consumer_file and ws in f.consumer_file.lower())
+            ]
+        findings: list[dict[str, Any]] = []
+        for f in flows:
+            findings.append({
+                "flow_id": f.flow_id,
+                "worker": f"{f.consumer_file}:{f.consumer_symbol}" if f.consumer_file else "Unknown",
+                "queue_name": f.queue_name,
+                "consumer_reauthorizes": f.security_boundary.consumer_reauthorizes,
+                "consumer_auth_details": f.security_boundary.consumer_auth_details,
+                "tenant_isolated": f.security_boundary.tenant_isolated,
+                "tenant_propagation_method": f.security_boundary.tenant_propagation_method,
+                "invariant_violations": f.security_boundary.invariant_violations,
+                "sensitive_payload_fields": [
+                    p.to_dict() for p in f.payload_propagations if p.reaches_sensitive_sink
+                ],
+            })
+        return findings
+
+    async def query_idempotency_and_concurrency(
+        self,
+        target: str | Path,
+        entity: str | None = None,
+        queue_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Inspect concurrency controls, idempotency guards, and retry hazards across queues."""
+        target_path = Path(target).expanduser().resolve()
+        inspector = RepositoryInspector(self.config.scan)
+        inspection = inspector.inspect(target_path)
+        from semantiq.repository.intelligence import RepositoryIntelligence
+
+        intelligence = RepositoryIntelligence(target_path)
+        intelligence.index_repository(inspection.in_scope_files)
+        flows = intelligence.get_async_flows(queue=queue_name)
+        if entity:
+            ent = entity.lower()
+            flows = [
+                f for f in flows
+                if ent in f.queue_name.lower()
+                or ent in f.producer_symbol.lower()
+                or (f.consumer_symbol and ent in f.consumer_symbol.lower())
+                or any(ent in p.lower() for p in f.payload_schema)
+            ]
+        results: list[dict[str, Any]] = []
+        for f in flows:
+            results.append({
+                "flow_id": f.flow_id,
+                "queue_name": f.queue_name,
+                "producer": f"{f.producer_file}:{f.producer_symbol}",
+                "consumer": f"{f.consumer_file}:{f.consumer_symbol}" if f.consumer_file else "Unresolved",
+                "has_idempotency_guard": f.security_boundary.has_idempotency_guard,
+                "idempotency_mechanism": f.security_boundary.idempotency_mechanism,
+                "has_retry_risk": f.security_boundary.has_retry_risk,
+                "invariant_violations": f.security_boundary.invariant_violations,
+                "evidence": f.evidence,
+            })
+        return results
+
+    async def resolve_dependency_symbol(
+        self,
+        target: str | Path,
+        symbol_path: str,
+    ) -> dict[str, Any] | None:
+        """Statically resolve symbol across package or dependency boundaries."""
+        target_path = Path(target).expanduser().resolve()
+        from semantiq.analysis.dependency_resolution import DependencyResolver
+
+        resolver = DependencyResolver(target_path)
+        sym = resolver.resolve_symbol(symbol_path)
+        return sym.to_dict() if sym else None
+
+    async def get_dependency_source(
+        self,
+        target: str | Path,
+        symbol_or_path: str,
+        start_line: int,
+        end_line: int,
+        max_lines: int = 50,
+    ) -> dict[str, Any]:
+        """Fetch bounded source code lines from a local or external dependency."""
+        target_path = Path(target).expanduser().resolve()
+        from semantiq.analysis.dependency_resolution import DependencyResolver
+
+        resolver = DependencyResolver(target_path)
+        return resolver.get_source_slice(symbol_or_path, start_line, end_line, max_lines=max_lines)
+
+    async def query_security_primitives(
+        self,
+        target: str | Path,
+        kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Inspect security primitives, entropy sources, and lifecycle controls."""
+        target_path = Path(target).expanduser().resolve()
+        inspector = RepositoryInspector(self.config.scan)
+        inspection = inspector.inspect(target_path)
+        from semantiq.analysis.security_primitives import SecurityPrimitivesAnalyzer
+
+        analyzer = SecurityPrimitivesAnalyzer(target_path)
+        facts = analyzer.analyze_repository(inspection.in_scope_files)
+        if kind:
+            facts = [f for f in facts if f.kind.value == kind or kind.lower() in f.kind.value.lower()]
+        return [f.to_dict() for f in facts]
+
     async def get_analysis_gaps(self, target: str | Path) -> dict[str, Any]:
         """Report unresolved dynamic calls, unparsed files, and unsupported syntax."""
         repo_path = Path(target).expanduser().resolve()
@@ -649,3 +773,169 @@ class Semantiq:
         )
         return await investigator.investigate(prompt_hint=prompt_hint)
 
+    async def finalize_scan_contract(
+        self,
+        target: str | Path,
+        scan_id: str | None = None,
+        findings: list[Finding | dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Finalize and seal findings into an evidence-backed SARIF/JSON scan contract."""
+        target_path = Path(target).expanduser().resolve()
+        if not target_path.exists():
+            raise TargetNotFoundError(f"Target path does not exist: {target_path}")
+
+        findings_to_finalize: list[Finding] = []
+        if findings is not None:
+            for item in findings:
+                if isinstance(item, Finding):
+                    findings_to_finalize.append(item)
+                elif isinstance(item, dict):
+                    findings_to_finalize.append(Finding.model_validate(item))
+        elif scan_id and self.storage:
+            findings_to_finalize = self.storage.get_findings_by_scan(scan_id)
+
+        from semantiq.validation.contract_finalizer import ScanContractFinalizer
+
+        finalizer = ScanContractFinalizer(target_path)
+        report = finalizer.finalize(findings_to_finalize, scan_id=scan_id or "mcp_contract")
+
+        if self.storage:
+            with contextlib.suppress(Exception):
+                self.storage.save_finalization_report(report, scan_id=scan_id or "mcp_contract")
+
+        return report.to_dict()
+
+    def _build_graph(self, target: str | Path) -> SemanticProgramGraph:
+        target_path = Path(target).expanduser().resolve()
+        inspector = RepositoryInspector(self.config.scan)
+        inspection = inspector.inspect(target_path)
+        from semantiq.graph.builder import GraphBuilder
+        builder = GraphBuilder(target_path, source_revision=inspection.git_revision or "")
+        return builder.build(inspection.in_scope_files).graph
+
+    async def resolve_symbol(self, target: str | Path, symbol: str) -> dict[str, Any]:
+        """Statically resolve a symbol with exact location, MRO, parameters, and provenance."""
+        graph = self._build_graph(target)
+        res = graph.resolve_symbol_detail(symbol)
+        return res if res is not None else {"status": "symbol_not_found", "symbol": symbol}
+
+    async def trace_argument_into_callee(
+        self,
+        target: str | Path,
+        caller_symbol: str,
+        callee_symbol: str,
+        argument: str | int | None = None,
+    ) -> dict[str, Any]:
+        """Trace how an argument expression in caller maps to callee parameters and sensitive sinks."""
+        graph = self._build_graph(target)
+        return graph.trace_argument_to_callee(caller_symbol, callee_symbol, argument)
+
+    async def trace_return_to_caller(
+        self,
+        target: str | Path,
+        callee_symbol: str,
+        caller_symbol: str | None = None,
+    ) -> dict[str, Any]:
+        """Trace return values from callee back into caller receiving variables."""
+        graph = self._build_graph(target)
+        return graph.trace_return_to_caller(callee_symbol, caller_symbol)
+
+    async def find_routes_reaching_sensitive_operation(
+        self,
+        target: str | Path,
+        sink_kind: str | None = None,
+        route_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Find all HTTP/WebSocket routes reaching a sensitive sink with guard comparison."""
+        graph = self._build_graph(target)
+        return graph.query_route_reachability_chain(route_path=route_filter, sink_kind=sink_kind)
+
+    async def identify_authorization_checks(
+        self,
+        target: str | Path,
+        target_symbol: str,
+    ) -> dict[str, Any]:
+        """Inspect enforced, bypassed, and unresolved guards protecting a route or function."""
+        graph = self._build_graph(target)
+        return graph.identify_route_guards(target_symbol)
+
+    async def show_unresolved_dynamic_dispatch(
+        self,
+        target: str | Path,
+    ) -> list[dict[str, Any]]:
+        """Extract all unresolved dynamic dispatches and reflection sites."""
+        graph = self._build_graph(target)
+        return graph.get_unresolved_dispatches()
+
+    async def get_interprocedural_evidence_path(
+        self,
+        target: str | Path,
+        source_entry: str,
+        sink: str,
+    ) -> dict[str, Any]:
+        """Construct an ordered, verified causal execution path mapped to Phase 1 semantic roles."""
+        graph = self._build_graph(target)
+        return graph.get_interprocedural_evidence_path(source_entry, sink)
+
+    async def list_investigation_packets(
+        self,
+        target: str | Path,
+    ) -> list[dict[str, Any]]:
+        """Partition repository attack surface into bounded, prioritized investigation packets."""
+        from semantiq.discovery.coordinator import InvestigationCoordinator
+
+        coordinator = InvestigationCoordinator(repository_root=target, storage=self.storage)
+        graph = self._build_graph(target)
+        py_files = [
+            str(p.relative_to(Path(target).resolve())).replace("\\", "/")
+            for p in Path(target).resolve().rglob("*.py")
+            if not any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv") for part in p.parts)
+        ]
+        packets = coordinator.partition_investigation_packets(graph, py_files)
+        return [pkt.to_dict() for pkt in packets]
+
+    async def run_parallel_investigation(
+        self,
+        target: str | Path,
+        max_workers: int = 3,
+        include_adversarial: bool = True,
+        timeout_seconds: float = 120.0,
+    ) -> dict[str, Any]:
+        """Execute bounded parallel multi-perspective investigation across specialized workers."""
+        from semantiq.discovery.coordinator import InvestigationCoordinator
+        from semantiq.providers.openai import OpenAIProvider
+
+        coordinator = InvestigationCoordinator(repository_root=target, storage=self.storage)
+        provider = self.ai_provider or OpenAIProvider(self.config.ai)
+        run_res = await coordinator.run_parallel_investigation(
+            provider=provider,
+            max_concurrent_workers=max_workers,
+            global_timeout_seconds=timeout_seconds,
+            include_adversarial=include_adversarial,
+        )
+        return run_res.to_dict()
+
+    async def get_coordinator_status(
+        self,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Retrieve recent coordinator run status, packets, and worker executions."""
+        if run_id:
+            run = self.storage.get_coordinator_run(run_id)
+            if not run:
+                return {"status": "not_found", "run_id": run_id}
+            packets = self.storage.get_investigation_packets(run_id)
+            workers = self.storage.get_worker_executions(run_id)
+            decisions = self.storage.get_reducer_decisions(run_id)
+            return {
+                "status": "success",
+                "run": run,
+                "packets": packets,
+                "workers": workers,
+                "decisions": decisions,
+            }
+        recent_runs = self.storage.list_coordinator_runs(limit=10)
+        return {
+            "status": "success",
+            "recent_runs": recent_runs,
+        }

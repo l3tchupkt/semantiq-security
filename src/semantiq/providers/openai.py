@@ -82,6 +82,7 @@ class OpenAIProvider(BaseAIProvider):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
         system_prompt: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> ProviderToolResponse:
         if not self.api_key:
             raise ProviderAuthenticationError("Missing API key for OpenAI provider.")
@@ -103,6 +104,8 @@ class OpenAIProvider(BaseAIProvider):
         }
         if tools:
             payload["tools"] = [t.to_openai_tool() for t in tools]
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
 
         max_retries = 3
         for attempt in range(max_retries):
@@ -147,11 +150,18 @@ class OpenAIProvider(BaseAIProvider):
 
                     usage = data.get("usage", {})
                     tokens_used = usage.get("total_tokens", 0)
+                    input_tokens = usage.get("prompt_tokens", 0)
+                    output_tokens = usage.get("completion_tokens", 0)
+                    prompt_details = usage.get("prompt_tokens_details") or {}
+                    cached_input_tokens = prompt_details.get("cached_tokens", 0)
 
                     return ProviderToolResponse(
                         content=content,
                         tool_calls=tool_calls,
                         tokens_used=tokens_used,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cached_input_tokens=cached_input_tokens,
                         finish_reason=finish_reason,
                         raw_response={"id": data.get("id"), "model": data.get("model"), "usage": usage},
                     )

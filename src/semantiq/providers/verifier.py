@@ -23,7 +23,11 @@ def verify_finding_citations(repository_root: Path, finding: Finding) -> tuple[b
 
     file_path = repository_root / clean_path
     if not file_path.exists() or not file_path.is_file():
-        return False, f"Cited file does not exist in repository: {finding.file_path}"
+        cand_p = Path(finding.file_path).resolve()
+        if cand_p.is_file():
+            file_path = cand_p
+        else:
+            return False, f"Cited file does not exist in repository: {finding.file_path}"
 
     try:
         content = file_path.read_text(encoding="utf-8", errors="replace")

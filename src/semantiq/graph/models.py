@@ -53,6 +53,9 @@ class NodeKind(str, Enum):
     AUTHORIZATION_CHECK = "authorization_check"
     VALIDATION = "validation"
     SANITIZER = "sanitizer"
+    CSRF_CONTROL = "csrf_control"
+    DECORATOR = "decorator"
+    EXCEPTION_HANDLER = "exception_handler"
 
     # Context & boundaries
     TRUST_BOUNDARY = "trust_boundary"
@@ -91,17 +94,26 @@ class EdgeKind(str, Enum):
     CONSUMES_FROM = "consumes_from"
     DISPATCHES_ASYNC = "dispatches_async"
     PROPAGATES_PAYLOAD = "propagates_payload"
+    INHERITS = "inherits"
+    OVERRIDES = "overrides"
+    DECORATES = "decorates"
+    PROPAGATES_EXCEPTION = "propagates_exception"
+    CATCHES_EXCEPTION = "catches_exception"
+    BINDS_ROUTE = "binds_route"
 
 
 class RelationshipProvenance(str, Enum):
     """Provenance and epistemological grounding of a graph node or edge."""
 
     DIRECT_FACT = "direct_fact"  # Extracted directly from AST or source syntax
+    STATICALLY_RESOLVED = "statically_resolved"  # Statically verified through AST / import resolution
     STATICALLY_INFERRED = "statically_inferred"  # Inferred via static call/import resolution
+    FRAMEWORK_RESOLVED = "framework_resolved"  # Resolved via framework conventions or adapters
+    DYNAMICALLY_INFERRED = "dynamically_inferred"  # Inferred through runtime heuristics or partial patterns
+    PROBABLE = "probable"  # Probable call/dataflow relationship requiring local verification
+    PROBABLE_UNVERIFIED = "probable_unverified"  # Heuristically matched queue/schema without explicit binding
     UNRESOLVED = "unresolved"  # Dynamic dispatch or unresolvable reference
     MODEL_PROPOSED = "model_proposed"  # Suggested by AI assistant, requiring local verification
-    FRAMEWORK_RESOLVED = "framework_resolved"  # Resolved via framework queue or task name conventions
-    PROBABLE_UNVERIFIED = "probable_unverified"  # Heuristically matched queue/schema without explicit binding
 
 
 class GraphNode(BaseModel):

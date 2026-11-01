@@ -52,6 +52,9 @@ class ProviderToolResponse:
     content: str | None = None
     tool_calls: list[InvestigationToolCall] = field(default_factory=list)
     tokens_used: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int = 0
     finish_reason: str = "stop"
     raw_response: dict[str, Any] = field(default_factory=dict)
 
@@ -72,6 +75,7 @@ class BaseAIProvider(ABC):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
         system_prompt: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> ProviderToolResponse:
         """Send multi-turn messages and tool definitions, returning text or tool calls."""
 

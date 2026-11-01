@@ -1,0 +1,36 @@
+{
+  "error_count": 0,
+  "findings": [
+    {
+      "confidence": "medium",
+      "end_line": 1210,
+      "evidence_refs": [
+        "ev_9e63657e24ba"
+      ],
+      "file_path": "ait/gui/__init__.py",
+      "finding_id": "sqf_ai-discovery-pkt_command_dispatch_01_1193",
+      "fingerprint": "semantiq/v1:sha256:1e635c49b57924a15610e19f69d8a93904476ba80aa1a8e157e34a0c84b80bb3",
+      "lifecycle_state": "candidate",
+      "proof_gaps_count": 1,
+      "rule_id": "AI-DISCOVERY-pkt_command_dispatch_01",
+      "severity": "medium",
+      "start_line": 1193
+    }
+  ],
+  "findings_count": 1,
+  "is_sealed": true,
+  "manifest_hash": "sha256:69f2c7554272bcdbb62e607a422843ac3a83c500571239a99fb0cbc4fae857a6",
+  "scan_id": "scan_3ab1205f",
+  "violations": [
+    {
+      "code": "UNRESOLVED_PROOF_GAP",
+      "file_path": "ait/gui/__init__.py",
+      "finding_id": "sqf_ai-discovery-pkt_command_dispatch_01_1193",
+      "line": null,
+      "message": "Unresolved proof obligation:  ()",
+      "severity": "WARNING",
+      "violation_id": "v_gap_gap_71546855d627"
+    }
+  ],
+  "warning_count": 1
+}

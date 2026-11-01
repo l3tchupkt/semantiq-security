@@ -1,0 +1,609 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Causal execution trace for Unauthenticated Flight Software Command Dispatch via /cmd"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "importance": "important",
+                      "location": {
+                        "message": {
+                          "text": "[ENTRYPOINT] HTTP POST endpoint accepting command payload from web client."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 432,
+                            "snippet": {
+                              "text": "@App.route(\"/cmd\", method=\"POST\")\ndef handle_cmd():"
+                            },
+                            "startLine": 431
+                          }
+                        }
+                      },
+                      "step": 1
+                    },
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[USER_INPUT] Attacker supplies command name and arguments via form parameter."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 442,
+                            "snippet": {
+                              "text": "command = bottle.request.forms.get(\"command\").strip()"
+                            },
+                            "startLine": 442
+                          }
+                        }
+                      },
+                      "step": 2
+                    },
+                    {
+                      "importance": "important",
+                      "location": {
+                        "message": {
+                          "text": "[PROPAGATION] Command string parsed and converted into typed flight command arguments."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 447,
+                            "snippet": {
+                              "text": "args = command.split()\nif args:\n    name = args[0].upper()\n    args = [util.toNumber(t, t) for t in args[1:]]"
+                            },
+                            "startLine": 444
+                          }
+                        }
+                      },
+                      "step": 3
+                    },
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[ROOT_CONTROL] Handler accesses session without enforcing role permissions or validating caller identity."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 441,
+                            "snippet": {
+                              "text": "with Sessions.current() as session:"
+                            },
+                            "startLine": 441
+                          }
+                        }
+                      },
+                      "step": 4
+                    },
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[SINK] Transmits command packet to connected flight systems or hardware backend."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 449,
+                            "snippet": {
+                              "text": "if self.send(name, *args):"
+                            },
+                            "startLine": 449
+                          }
+                        }
+                      },
+                      "step": 5
+                    },
+                    {
+                      "importance": "important",
+                      "location": {
+                        "message": {
+                          "text": "[OUTCOME] Unauthorized command transmitted and committed into flight command history."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 450,
+                            "snippet": {
+                              "text": "Sessions.add_event(\"cmd:hist\", command)"
+                            },
+                            "startLine": 450
+                          }
+                        }
+                      },
+                      "step": 6
+                    },
+                    {
+                      "importance": "important",
+                      "location": {
+                        "message": {
+                          "text": "[EXPECTED_CONTROL] Authentication middleware, operator role check, and CSRF token verification required."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 441,
+                            "snippet": {
+                              "text": "with Sessions.current() as session:"
+                            },
+                            "startLine": 441
+                          }
+                        }
+                      },
+                      "step": 7
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fingerprints": {
+            "primary": "semantiq/v1:sha256:f6eaf87e056ba86e204e2c096909bb174973cdafb9aa0718fca0315ec3ac3bec"
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 450,
+                  "startLine": 431
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The /cmd endpoint parses and transmits arbitrary commands to flight hardware without authentication or CSRF tokens."
+          },
+          "properties": {
+            "evidence_count": 7,
+            "lifecycle_state": "partially_confirmed",
+            "proof_gap_count": 1,
+            "security-score": 8.1
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "[CodeEvidenceRole.ENTRYPOINT] HTTP POST endpoint accepting command payload from web client."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 432,
+                  "startLine": 431
+                }
+              }
+            },
+            {
+              "id": 2,
+              "message": {
+                "text": "[CodeEvidenceRole.USER_INPUT] Attacker supplies command name and arguments via form parameter."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 442,
+                  "startLine": 442
+                }
+              }
+            },
+            {
+              "id": 3,
+              "message": {
+                "text": "[CodeEvidenceRole.PROPAGATION] Command string parsed and converted into typed flight command arguments."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 447,
+                  "startLine": 444
+                }
+              }
+            },
+            {
+              "id": 4,
+              "message": {
+                "text": "[CodeEvidenceRole.ROOT_CONTROL] Handler accesses session without enforcing role permissions or validating caller identity."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 441,
+                  "startLine": 441
+                }
+              }
+            },
+            {
+              "id": 5,
+              "message": {
+                "text": "[CodeEvidenceRole.SINK] Transmits command packet to connected flight systems or hardware backend."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 449,
+                  "startLine": 449
+                }
+              }
+            },
+            {
+              "id": 6,
+              "message": {
+                "text": "[CodeEvidenceRole.OUTCOME] Unauthorized command transmitted and committed into flight command history."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 450,
+                  "startLine": 450
+                }
+              }
+            },
+            {
+              "id": 7,
+              "message": {
+                "text": "[CodeEvidenceRole.EXPECTED_CONTROL] Authentication middleware, operator role check, and CSRF token verification required."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 441,
+                  "startLine": 441
+                }
+              }
+            }
+          ],
+          "ruleId": "SQ-AUTH-BYPASS-001"
+        },
+        {
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Causal execution trace for Predictable Session Token via Python Heap Address Allocation"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "importance": "important",
+                      "location": {
+                        "message": {
+                          "text": "[ENTRYPOINT] Client session representation class managing connection state."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 45,
+                            "snippet": {
+                              "text": "class Session(object):"
+                            },
+                            "startLine": 44
+                          }
+                        }
+                      },
+                      "step": 1
+                    },
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[ROOT_CONTROL] Session ID generation lacks cryptographic entropy generator or random nonce."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 83,
+                            "snippet": {
+                              "text": "@property\ndef id(self):"
+                            },
+                            "startLine": 81
+                          }
+                        }
+                      },
+                      "step": 2
+                    },
+                    {
+                      "importance": "essential",
+                      "location": {
+                        "message": {
+                          "text": "[SINK] Raw CPython object memory address returned directly as session token."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 84,
+                            "snippet": {
+                              "text": "return str(id(self))"
+                            },
+                            "startLine": 84
+                          }
+                        }
+                      },
+                      "step": 3
+                    },
+                    {
+                      "importance": "important",
+                      "location": {
+                        "message": {
+                          "text": "[OUTCOME] Attacker predicting heap address allocation pattern can hijack legitimate operator sessions."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 84,
+                            "snippet": {
+                              "text": "return str(id(self))"
+                            },
+                            "startLine": 84
+                          }
+                        }
+                      },
+                      "step": 4
+                    },
+                    {
+                      "importance": "important",
+                      "location": {
+                        "message": {
+                          "text": "[EXPECTED_CONTROL] CSPRNG (e.g. secrets.token_hex(32)) required to enforce token unpredictability."
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "ait/gui/__init__.py",
+                            "uriBaseId": "%SRCROOT%"
+                          },
+                          "region": {
+                            "endLine": 83,
+                            "snippet": {
+                              "text": "\"\"\"A unique identifier for this Session.\"\"\""
+                            },
+                            "startLine": 82
+                          }
+                        }
+                      },
+                      "step": 5
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fingerprints": {
+            "primary": "semantiq/v1:sha256:9d55ef70af7788d775a2aa4d11f8e9d4741e68236841a8b791640e70ce88180b"
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 85,
+                  "startLine": 81
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Session identifier uses Python id(self) heap memory address rather than a cryptographically secure random value, enabling session prediction."
+          },
+          "properties": {
+            "evidence_count": 5,
+            "lifecycle_state": "partially_confirmed",
+            "proof_gap_count": 1,
+            "security-score": 6.8
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "[CodeEvidenceRole.ENTRYPOINT] Client session representation class managing connection state."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 45,
+                  "startLine": 44
+                }
+              }
+            },
+            {
+              "id": 2,
+              "message": {
+                "text": "[CodeEvidenceRole.ROOT_CONTROL] Session ID generation lacks cryptographic entropy generator or random nonce."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 83,
+                  "startLine": 81
+                }
+              }
+            },
+            {
+              "id": 3,
+              "message": {
+                "text": "[CodeEvidenceRole.SINK] Raw CPython object memory address returned directly as session token."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 84,
+                  "startLine": 84
+                }
+              }
+            },
+            {
+              "id": 4,
+              "message": {
+                "text": "[CodeEvidenceRole.OUTCOME] Attacker predicting heap address allocation pattern can hijack legitimate operator sessions."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 84,
+                  "startLine": 84
+                }
+              }
+            },
+            {
+              "id": 5,
+              "message": {
+                "text": "[CodeEvidenceRole.EXPECTED_CONTROL] CSPRNG (e.g. secrets.token_hex(32)) required to enforce token unpredictability."
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "ait/gui/__init__.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endLine": 83,
+                  "startLine": 82
+                }
+              }
+            }
+          ],
+          "ruleId": "SQ-CRYPTO-HEAP-001"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Semantiq Security",
+          "organization": "l3tchupkt",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "The /cmd endpoint parses and transmits arbitrary commands to flight hardware without authentication or CSRF tokens."
+              },
+              "help": {
+                "text": "Remediate according to Semantiq findings guidance."
+              },
+              "id": "SQ-AUTH-BYPASS-001",
+              "name": "Unauthenticated Flight Software Command Dispatch via /cmd",
+              "properties": {
+                "category": "authorization_bypass",
+                "cwe": [],
+                "precision": "high",
+                "security-severity": "9.5"
+              },
+              "shortDescription": {
+                "text": "Unauthenticated Flight Software Command Dispatch via /cmd"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Session identifier uses Python id(self) heap memory address rather than a cryptographically secure random value, enabling session prediction."
+              },
+              "help": {
+                "text": "Remediate according to Semantiq findings guidance."
+              },
+              "id": "SQ-CRYPTO-HEAP-001",
+              "name": "Predictable Session Token via Python Heap Address Allocation",
+              "properties": {
+                "category": "insecure_crypto",
+                "cwe": [],
+                "precision": "high",
+                "security-severity": "8.0"
+              },
+              "shortDescription": {
+                "text": "Predictable Session Token via Python Heap Address Allocation"
+              }
+            }
+          ],
+          "semanticVersion": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

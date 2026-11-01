@@ -35,6 +35,7 @@ class MockAIProvider(BaseAIProvider):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
         system_prompt: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> ProviderToolResponse:
         """Return deterministic scripted or simulated tool response."""
         self.call_history.append({"messages": messages, "system_prompt": system_prompt})
