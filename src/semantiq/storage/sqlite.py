@@ -449,6 +449,67 @@ CREATE INDEX IF NOT EXISTS idx_semantic_merges_secondary ON semantic_merges(seco
 CREATE INDEX IF NOT EXISTS idx_provider_usage_run_id ON provider_usage(run_id);
 """
 
+SCHEMA_V6 = """
+CREATE TABLE IF NOT EXISTS deep_scan_runs (
+    scan_id TEXT PRIMARY KEY,
+    schema_version INTEGER NOT NULL DEFAULT 6,
+    status TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    workers_limit INTEGER NOT NULL,
+    packets_total INTEGER NOT NULL DEFAULT 0,
+    packets_completed INTEGER NOT NULL DEFAULT 0,
+    packets_failed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    terminal_reason TEXT,
+    FOREIGN KEY(scan_id) REFERENCES scans(scan_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS deep_scan_packets (
+    packet_id TEXT PRIMARY KEY,
+    scan_id TEXT NOT NULL,
+    dimension TEXT NOT NULL,
+    status TEXT NOT NULL,
+    target_symbols_json TEXT NOT NULL DEFAULT '[]',
+    target_files_json TEXT NOT NULL DEFAULT '[]',
+    assigned_skills_json TEXT NOT NULL DEFAULT '[]',
+    budget_json TEXT NOT NULL DEFAULT '{}',
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(scan_id) REFERENCES deep_scan_runs(scan_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS packet_transitions (
+    transition_id TEXT PRIMARY KEY,
+    packet_id TEXT NOT NULL,
+    from_state TEXT NOT NULL,
+    to_state TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    reason TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS deep_worker_executions (
+    worker_id TEXT PRIMARY KEY,
+    scan_id TEXT NOT NULL,
+    packet_id TEXT NOT NULL,
+    skill_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    latency_seconds REAL NOT NULL,
+    tokens_used INTEGER NOT NULL DEFAULT 0,
+    tool_calls INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(scan_id) REFERENCES deep_scan_runs(scan_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_deep_scan_packets_scan_id ON deep_scan_packets(scan_id);
+CREATE INDEX IF NOT EXISTS idx_packet_transitions_packet_id ON packet_transitions(packet_id);
+CREATE INDEX IF NOT EXISTS idx_deep_worker_executions_scan_id ON deep_worker_executions(scan_id);
+CREATE INDEX IF NOT EXISTS idx_deep_worker_executions_packet_id ON deep_worker_executions(packet_id);
+"""
 
 
 VALID_LIFECYCLE_STATES = {
@@ -496,20 +557,33 @@ class SQLiteStorage:
             conn.executescript(SCHEMA_V3)
             conn.executescript(SCHEMA_V4)
             conn.executescript(SCHEMA_V5)
+            conn.executescript(SCHEMA_V6)
             with suppress(sqlite3.OperationalError):
-                conn.execute("ALTER TABLE repository_memory ADD COLUMN memory_json TEXT DEFAULT '{}';")
+                conn.execute(
+                    "ALTER TABLE repository_memory ADD COLUMN memory_json TEXT DEFAULT '{}';"
+                )
             with suppress(sqlite3.OperationalError):
-                conn.execute("ALTER TABLE findings ADD COLUMN lifecycle_state TEXT DEFAULT 'candidate';")
+                conn.execute(
+                    "ALTER TABLE findings ADD COLUMN lifecycle_state TEXT DEFAULT 'candidate';"
+                )
             with suppress(sqlite3.OperationalError):
-                conn.execute("ALTER TABLE findings ADD COLUMN root_cause_refs_json TEXT DEFAULT '[]';")
+                conn.execute(
+                    "ALTER TABLE findings ADD COLUMN root_cause_refs_json TEXT DEFAULT '[]';"
+                )
             with suppress(sqlite3.OperationalError):
                 conn.execute("ALTER TABLE findings ADD COLUMN proof_gaps_json TEXT DEFAULT '[]';")
             with suppress(sqlite3.OperationalError):
-                conn.execute("ALTER TABLE findings ADD COLUMN semantic_identity_json TEXT DEFAULT '{}';")
+                conn.execute(
+                    "ALTER TABLE findings ADD COLUMN semantic_identity_json TEXT DEFAULT '{}';"
+                )
             with suppress(sqlite3.OperationalError):
-                conn.execute("ALTER TABLE finding_versions ADD COLUMN semantic_identity_json TEXT NOT NULL DEFAULT '{}';")
+                conn.execute(
+                    "ALTER TABLE finding_versions ADD COLUMN semantic_identity_json TEXT NOT NULL DEFAULT '{}';"
+                )
             with suppress(sqlite3.OperationalError):
-                conn.execute("ALTER TABLE finding_versions ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}';")
+                conn.execute(
+                    "ALTER TABLE finding_versions ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}';"
+                )
             # Non-destructive version reconciliation: archive duplicates before unique index creation
             with suppress(sqlite3.OperationalError):
                 conn.execute(
@@ -569,7 +643,14 @@ class SQLiteStorage:
             with suppress(sqlite3.OperationalError):
                 cur = conn.execute("PRAGMA foreign_key_list(semantic_merges);")
                 fks = cur.fetchall()
-                has_secondary_fk = any(fk[3] == "secondary_finding_id" or fk["from"] == "secondary_finding_id" for fk in fks) if fks else False
+                has_secondary_fk = (
+                    any(
+                        fk[3] == "secondary_finding_id" or fk["from"] == "secondary_finding_id"
+                        for fk in fks
+                    )
+                    if fks
+                    else False
+                )
                 if not has_secondary_fk and fks:
                     conn.execute("ALTER TABLE semantic_merges RENAME TO semantic_merges_legacy;")
                     conn.execute(
@@ -589,7 +670,9 @@ class SQLiteStorage:
                         );
                         """
                     )
-                    conn.execute("INSERT INTO semantic_merges SELECT * FROM semantic_merges_legacy;")
+                    conn.execute(
+                        "INSERT INTO semantic_merges SELECT * FROM semantic_merges_legacy;"
+                    )
                     conn.execute("DROP TABLE semantic_merges_legacy;")
             cur = conn.execute("SELECT version FROM schema_version;")
             row = cur.fetchone()
@@ -641,7 +724,9 @@ class SQLiteStorage:
         except sqlite3.Error as error:
             raise StorageError(f"Database error while saving scan: {error}") from error
 
-    def _save_finding_records(self, conn: sqlite3.Connection, finding: Finding, scan_id: str) -> None:
+    def _save_finding_records(
+        self, conn: sqlite3.Connection, finding: Finding, scan_id: str
+    ) -> None:
         """Persist finding and its normalized evidence, references, proof gaps, and adjudication."""
         target_scan_id = scan_id or finding.scan_id or "default_scan"
         conn.execute(
@@ -692,7 +777,11 @@ class SQLiteStorage:
         for ev in finding.code_evidence:
             ev_id = ev.ensure_id()
             role_str = ev.role.value if isinstance(ev.role, CodeEvidenceRole) else str(ev.role)
-            prov_str = ev.provenance.value if isinstance(ev.provenance, EvidenceProvenance) else str(ev.provenance)
+            prov_str = (
+                ev.provenance.value
+                if isinstance(ev.provenance, EvidenceProvenance)
+                else str(ev.provenance)
+            )
             stat_str = (
                 ev.verification_status.value
                 if isinstance(ev.verification_status, EvidenceVerificationStatus)
@@ -723,7 +812,11 @@ class SQLiteStorage:
             ref_pk = f"ref_{finding.finding_id}_{ref_id}_{step_idx}"
             ev_match = next((e for e in finding.code_evidence if e.evidence_id == ref_id), None)
             role_str = (
-                (ev_match.role.value if isinstance(ev_match.role, CodeEvidenceRole) else str(ev_match.role))
+                (
+                    ev_match.role.value
+                    if isinstance(ev_match.role, CodeEvidenceRole)
+                    else str(ev_match.role)
+                )
                 if ev_match
                 else "sink"
             )
@@ -745,7 +838,9 @@ class SQLiteStorage:
 
         for pg in finding.proof_gaps:
             gap_id = pg.ensure_id()
-            status_str = pg.status.value if isinstance(pg.status, ProofGapStatus) else str(pg.status)
+            status_str = (
+                pg.status.value if isinstance(pg.status, ProofGapStatus) else str(pg.status)
+            )
             conn.execute(
                 """
                 INSERT OR REPLACE INTO proof_gaps
@@ -788,7 +883,22 @@ class SQLiteStorage:
             with self._connection() as conn, conn:
                 self._save_finding_records(conn, finding, scan_id)
         except sqlite3.Error as error:
-            raise StorageError(f"Database error saving finding {finding.finding_id}: {error}") from error
+            raise StorageError(
+                f"Database error saving finding {finding.finding_id}: {error}"
+            ) from error
+
+    def save_findings_batch(self, findings: list[Finding], scan_id: str = "") -> None:
+        """Persist a batch of findings within a single transaction for high performance."""
+        if not findings:
+            return
+        try:
+            with self._connection() as conn, conn:
+                for finding in findings:
+                    self._save_finding_records(conn, finding, scan_id)
+        except sqlite3.Error as error:
+            raise StorageError(
+                f"Database error batch saving {len(findings)} findings: {error}"
+            ) from error
 
     def get_findings_by_scan(self, scan_id: str) -> list[Finding]:
         """Retrieve all findings recorded for a given scan."""
@@ -895,7 +1005,9 @@ class SQLiteStorage:
                 d["violations"] = json.loads(d["violations_json"])
                 return d
         except sqlite3.Error as error:
-            raise StorageError(f"Database error fetching finalization report for {scan_id}: {error}") from error
+            raise StorageError(
+                f"Database error fetching finalization report for {scan_id}: {error}"
+            ) from error
 
     def get_evidence_records(self, finding_id: str) -> list[CodeEvidence]:
         """Fetch all normalized semantic code evidence records for a finding."""
@@ -922,13 +1034,16 @@ class SQLiteStorage:
                             if r["provenance"] in [e.value for e in EvidenceProvenance]
                             else r["provenance"],
                             verification_status=EvidenceVerificationStatus(r["verification_status"])
-                            if r["verification_status"] in [e.value for e in EvidenceVerificationStatus]
+                            if r["verification_status"]
+                            in [e.value for e in EvidenceVerificationStatus]
                             else r["verification_status"],
                         )
                     )
                 return records
         except sqlite3.Error as error:
-            raise StorageError(f"Database error fetching evidence records for {finding_id}: {error}") from error
+            raise StorageError(
+                f"Database error fetching evidence records for {finding_id}: {error}"
+            ) from error
 
     def get_proof_gaps(self, finding_id: str) -> list[ProofGap]:
         """Fetch all proof gaps recorded for a finding."""
@@ -956,7 +1071,9 @@ class SQLiteStorage:
                     )
                 return gaps
         except sqlite3.Error as error:
-            raise StorageError(f"Database error fetching proof gaps for {finding_id}: {error}") from error
+            raise StorageError(
+                f"Database error fetching proof gaps for {finding_id}: {error}"
+            ) from error
 
     def save_proof_gap(self, proof_gap: ProofGap) -> None:
         """Persist or update a proof gap."""
@@ -986,7 +1103,9 @@ class SQLiteStorage:
                     ),
                 )
         except sqlite3.Error as error:
-            raise StorageError(f"Database error saving proof gap {proof_gap.gap_id}: {error}") from error
+            raise StorageError(
+                f"Database error saving proof gap {proof_gap.gap_id}: {error}"
+            ) from error
 
     def update_proof_gap_status(self, gap_id: str, status: ProofGapStatus | str) -> bool:
         """Update resolution status of a proof gap."""
@@ -1011,7 +1130,9 @@ class SQLiteStorage:
                 )
                 return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as error:
-            raise StorageError(f"Database error fetching adjudications for {finding_id}: {error}") from error
+            raise StorageError(
+                f"Database error fetching adjudications for {finding_id}: {error}"
+            ) from error
 
     # Phase 6 Persistent Graph & Repository Memory methods
     def save_graph(self, repo_path: str, source_revision: str, graph: SemanticProgramGraph) -> None:
@@ -1083,7 +1204,9 @@ class SQLiteStorage:
                 if not node_rows:
                     return None
 
-                graph = SemanticProgramGraph(repository_root=repo_path, source_revision=source_revision)
+                graph = SemanticProgramGraph(
+                    repository_root=repo_path, source_revision=source_revision
+                )
                 for r in node_rows:
                     node = GraphNode(
                         id=r["node_id"],
@@ -1117,7 +1240,9 @@ class SQLiteStorage:
         except sqlite3.Error as error:
             raise StorageError(f"Database error loading semantic graph: {error}") from error
 
-    def save_hypothesis(self, hypothesis: InvestigationHypothesis, scan_id: str, repo_path: str) -> None:
+    def save_hypothesis(
+        self, hypothesis: InvestigationHypothesis, scan_id: str, repo_path: str
+    ) -> None:
         """Persist structured investigation hypothesis."""
         try:
             with self._connection() as conn, conn:
@@ -1149,7 +1274,10 @@ class SQLiteStorage:
                     "SELECT full_json FROM investigation_hypotheses WHERE scan_id = ?;",
                     (scan_id,),
                 )
-                return [InvestigationHypothesis.model_validate_json(row["full_json"]) for row in cur.fetchall()]
+                return [
+                    InvestigationHypothesis.model_validate_json(row["full_json"])
+                    for row in cur.fetchall()
+                ]
         except sqlite3.Error as error:
             raise StorageError(f"Database error fetching hypotheses: {error}") from error
 
@@ -1177,7 +1305,9 @@ class SQLiteStorage:
         except sqlite3.Error as error:
             raise StorageError(f"Database error saving repository memory: {error}") from error
 
-    def load_repository_memory(self, repo_path: str, source_revision: str) -> InvestigationMemoryRecord | None:
+    def load_repository_memory(
+        self, repo_path: str, source_revision: str
+    ) -> InvestigationMemoryRecord | None:
         """Load persistent repository memory for a given path and revision."""
         try:
             with self._connection() as conn:
@@ -1239,7 +1369,9 @@ class SQLiteStorage:
                     updated_at=row["updated_at"],
                 )
         except sqlite3.Error as error:
-            raise StorageError(f"Database error loading latest repository memory: {error}") from error
+            raise StorageError(
+                f"Database error loading latest repository memory: {error}"
+            ) from error
 
     def invalidate_stale_memory(self, repo_path: str, current_revision: str) -> int:
         """Invalidate obsolete graph and memory caches when source code revision changes."""
@@ -1307,7 +1439,7 @@ class SQLiteStorage:
                             pkt.title,
                             pkt.focus_category,
                             pkt.priority,
-                            pkt.status.value if hasattr(pkt.status, 'value') else str(pkt.status),
+                            pkt.status.value if hasattr(pkt.status, "value") else str(pkt.status),
                             json.dumps(pkt.target_symbols),
                             json.dumps(pkt.entrypoint_ids),
                             json.dumps(pkt.sink_ids),
@@ -1328,7 +1460,9 @@ class SQLiteStorage:
                             w.worker_id,
                             run_result.run_id,
                             w.packet_id,
-                            w.worker_role.value if hasattr(w.worker_role, 'value') else str(w.worker_role),
+                            w.worker_role.value
+                            if hasattr(w.worker_role, "value")
+                            else str(w.worker_role),
                             w.input_tokens,
                             w.output_tokens,
                             w.cached_input_tokens,
@@ -1373,7 +1507,9 @@ class SQLiteStorage:
         """List recent investigation runs ordered by created_at DESC."""
         try:
             with self._connection() as conn:
-                cur = conn.execute("SELECT * FROM investigation_runs ORDER BY created_at DESC LIMIT ?;", (limit,))
+                cur = conn.execute(
+                    "SELECT * FROM investigation_runs ORDER BY created_at DESC LIMIT ?;", (limit,)
+                )
                 return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as error:
             raise StorageError(f"Database error listing coordinator runs: {error}") from error
@@ -1382,16 +1518,24 @@ class SQLiteStorage:
         """Retrieve packets for an investigation run."""
         try:
             with self._connection() as conn:
-                cur = conn.execute("SELECT * FROM investigation_packets WHERE run_id = ? ORDER BY priority DESC;", (run_id,))
+                cur = conn.execute(
+                    "SELECT * FROM investigation_packets WHERE run_id = ? ORDER BY priority DESC;",
+                    (run_id,),
+                )
                 return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as error:
-            raise StorageError(f"Database error retrieving investigation packets: {error}") from error
+            raise StorageError(
+                f"Database error retrieving investigation packets: {error}"
+            ) from error
 
     def get_worker_executions(self, run_id: str) -> list[dict[str, Any]]:
         """Retrieve worker execution logs for an investigation run."""
         try:
             with self._connection() as conn:
-                cur = conn.execute("SELECT * FROM worker_executions WHERE run_id = ? ORDER BY executed_at ASC;", (run_id,))
+                cur = conn.execute(
+                    "SELECT * FROM worker_executions WHERE run_id = ? ORDER BY executed_at ASC;",
+                    (run_id,),
+                )
                 return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as error:
             raise StorageError(f"Database error retrieving worker executions: {error}") from error
@@ -1400,7 +1544,10 @@ class SQLiteStorage:
         """Retrieve reducer decisions for an investigation run."""
         try:
             with self._connection() as conn:
-                cur = conn.execute("SELECT * FROM reducer_decisions WHERE run_id = ? ORDER BY decided_at ASC;", (run_id,))
+                cur = conn.execute(
+                    "SELECT * FROM reducer_decisions WHERE run_id = ? ORDER BY decided_at ASC;",
+                    (run_id,),
+                )
                 return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as error:
             raise StorageError(f"Database error retrieving reducer decisions: {error}") from error
@@ -1443,7 +1590,9 @@ class SQLiteStorage:
                     ),
                 )
         except sqlite3.Error as error:
-            raise StorageError(f"Database error saving finding version {version_id}: {error}") from error
+            raise StorageError(
+                f"Database error saving finding version {version_id}: {error}"
+            ) from error
 
     def get_finding_versions(self, finding_id: str) -> list[dict[str, Any]]:
         """Retrieve all versions of a finding ordered by version_number ASC."""
@@ -1461,7 +1610,9 @@ class SQLiteStorage:
                     rows.append(d)
                 return rows
         except sqlite3.Error as error:
-            raise StorageError(f"Database error fetching finding versions for {finding_id}: {error}") from error
+            raise StorageError(
+                f"Database error fetching finding versions for {finding_id}: {error}"
+            ) from error
 
     def record_lifecycle_transition(
         self,
@@ -1476,7 +1627,9 @@ class SQLiteStorage:
         """Record an explicit lifecycle state transition and atomically update the canonical finding."""
         to_clean = to_state.strip().lower()
         if to_clean not in VALID_LIFECYCLE_STATES:
-            raise ValueError(f"Invalid target lifecycle state: '{to_state}'. Valid states: {sorted(VALID_LIFECYCLE_STATES)}")
+            raise ValueError(
+                f"Invalid target lifecycle state: '{to_state}'. Valid states: {sorted(VALID_LIFECYCLE_STATES)}"
+            )
 
         ts = timestamp or datetime.now(timezone.utc).isoformat()
         try:
@@ -1497,7 +1650,9 @@ class SQLiteStorage:
                         ts,
                     ),
                 )
-                cur = conn.execute("SELECT full_json FROM findings WHERE finding_id = ?;", (finding_id,))
+                cur = conn.execute(
+                    "SELECT full_json FROM findings WHERE finding_id = ?;", (finding_id,)
+                )
                 row = cur.fetchone()
                 if row:
                     try:
@@ -1512,7 +1667,9 @@ class SQLiteStorage:
                         (to_clean, updated_json, finding_id),
                     )
         except sqlite3.Error as error:
-            raise StorageError(f"Database error recording lifecycle transition for {finding_id}: {error}") from error
+            raise StorageError(
+                f"Database error recording lifecycle transition for {finding_id}: {error}"
+            ) from error
 
     def get_lifecycle_transitions(self, finding_id: str) -> list[dict[str, Any]]:
         """Fetch audit log of lifecycle state transitions for a finding."""
@@ -1524,7 +1681,9 @@ class SQLiteStorage:
                 )
                 return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as error:
-            raise StorageError(f"Database error fetching lifecycle transitions for {finding_id}: {error}") from error
+            raise StorageError(
+                f"Database error fetching lifecycle transitions for {finding_id}: {error}"
+            ) from error
 
     def save_semantic_merge(
         self,
@@ -1563,7 +1722,9 @@ class SQLiteStorage:
                     ),
                 )
                 # Atomically ensure secondary finding lifecycle_state is marked as DUPLICATE
-                cur = conn.execute("SELECT full_json FROM findings WHERE finding_id = ?;", (secondary_finding_id,))
+                cur = conn.execute(
+                    "SELECT full_json FROM findings WHERE finding_id = ?;", (secondary_finding_id,)
+                )
                 row = cur.fetchone()
                 if row:
                     try:
@@ -1581,7 +1742,9 @@ class SQLiteStorage:
                         (updated_json, secondary_finding_id),
                     )
         except sqlite3.Error as error:
-            raise StorageError(f"Database error saving semantic merge record {merge_id}: {error}") from error
+            raise StorageError(
+                f"Database error saving semantic merge record {merge_id}: {error}"
+            ) from error
 
     def get_semantic_merges(self, primary_finding_id: str | None = None) -> list[dict[str, Any]]:
         """Retrieve semantic merge records, optionally filtered by primary finding ID."""
@@ -1643,7 +1806,9 @@ class SQLiteStorage:
                     ),
                 )
         except sqlite3.Error as error:
-            raise StorageError(f"Database error recording provider usage {usage_id}: {error}") from error
+            raise StorageError(
+                f"Database error recording provider usage {usage_id}: {error}"
+            ) from error
 
     def get_provider_usage(self, run_id: str) -> list[dict[str, Any]]:
         """Fetch all provider usage and token consumption records for a run."""
@@ -1655,4 +1820,6 @@ class SQLiteStorage:
                 )
                 return [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as error:
-            raise StorageError(f"Database error fetching provider usage for run {run_id}: {error}") from error
+            raise StorageError(
+                f"Database error fetching provider usage for run {run_id}: {error}"
+            ) from error
